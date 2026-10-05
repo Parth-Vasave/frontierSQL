@@ -33,6 +33,8 @@ MAX_CATEGORIES = 20
 MAX_CATEGORY_LENGTH = 40
 MAX_EXAMPLES = 3
 MAX_EXAMPLE_LENGTH = 60
+# Examples are the most frequent values among this many rows: bounded work on any table size.
+EXAMPLE_SAMPLE_ROWS = 10_000
 
 # Matches whole name parts: "email", "user_email", "password_hash" -- but not "emailed_at_count".
 _SENSITIVE = re.compile(
@@ -250,4 +252,19 @@ class Profiler:
         if len(values) <= MAX_CATEGORIES and all(len(v) <= MAX_CATEGORY_LENGTH for v in values):
             hints.categories = values
         elif self.sampling is SamplingMode.FULL:
-            hints.examples = [v[:MAX_EXAMPLE_LENGTH] for v in values[:MAX_EXAMPLES]]
+            hints.examples = [v[:MAX_EXAMPLE_LENGTH] for v in self._frequent_values(conn, table, col)]
+
+    def _frequent_values(self, conn: Connection, table: Table, col: Column) -> list[str]:
+        """The most common values among the first EXAMPLE_SAMPLE_ROWS non-NULL rows: they show how
+        values are written ('SLE', '1:54.123') better than the alphabetically first ones."""
+        sample = select(col.label("value")).where(col.is_not(None)).limit(EXAMPLE_SAMPLE_ROWS).subquery()
+        frequent = (
+            select(sample.c.value)
+            .group_by(sample.c.value)
+            .order_by(func.count().desc(), sample.c.value)
+            .limit(MAX_EXAMPLES)
+        )
+        self.adapter.begin_read_only(conn)
+        values: list[Any] = list(conn.execute(frequent).scalars())
+        conn.rollback()
+        return [str(v) for v in values]

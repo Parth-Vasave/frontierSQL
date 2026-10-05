@@ -6,12 +6,17 @@ The `retrieve` function is the seam where semantic (embedding) retrieval can be 
 
 Sensitive columns are never rendered. Sampled values are rendered as quoted data and the
 prompt tells the model to treat them as data, never as instructions.
+
+A column whose name also appears in another rendered table (other than a key used to join them)
+is marked "same name in: ...": such pairs often mean different things (a diagnosis recorded at an
+examination vs. the patient's diagnosis), and the model has to choose deliberately.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.database.profile import ColumnProfile, DatabaseProfile, TableProfile
@@ -70,12 +75,14 @@ def retrieve(profile: DatabaseProfile, question: str) -> list[TableProfile]:
     return [t for t in profile.tables if t.qualified_name in matched]
 
 
-def _render_column(column: ColumnProfile) -> str:
+def _render_column(column: ColumnProfile, same_name_in: Sequence[str] = ()) -> str:
     parts = [f"{column.name} {column.type}"]
     if column.primary_key:
         parts.append("PK")
     if column.comment:
         parts.append(f"-- {column.comment}")
+    if same_name_in:
+        parts.append(f"same name in: {', '.join(same_name_in)}")
     hints = column.hints
     if hints:
         if hints.categories is not None:
@@ -89,8 +96,35 @@ def _render_column(column: ColumnProfile) -> str:
     return "    " + " | ".join(parts)
 
 
+def same_named_columns(
+    profile: DatabaseProfile, tables: list[TableProfile]
+) -> dict[tuple[str, str], list[str]]:
+    """(table, column) -> the other rendered tables with a column of the same name (ignoring
+    case), for columns that are neither primary keys nor join keys between rendered tables."""
+    names = {t.qualified_name for t in tables}
+    keys: set[tuple[str, str]] = set()
+    for r in profile.relationships:
+        if r.from_table in names and r.to_table in names:
+            keys |= {(r.from_table, c.lower()) for c in r.from_columns}
+            keys |= {(r.to_table, c.lower()) for c in r.to_columns}
+    owners: dict[str, list[str]] = {}
+    for table in tables:
+        for column in table.columns:
+            key = (table.qualified_name, column.name.lower())
+            if not column.sensitive and not column.primary_key and key not in keys:
+                owners.setdefault(column.name.lower(), []).append(table.qualified_name)
+    marked: dict[tuple[str, str], list[str]] = {}
+    for column_name, owner_tables in owners.items():
+        for table_name in owner_tables:
+            others = [t for t in owner_tables if t != table_name]
+            if others:
+                marked[(table_name, column_name)] = others
+    return marked
+
+
 def render(profile: DatabaseProfile, tables: list[TableProfile]) -> str:
     names = {t.qualified_name for t in tables}
+    same_names = same_named_columns(profile, tables)
     lines = []
     for table in tables:
         header = f"TABLE {table.qualified_name}"
@@ -99,7 +133,11 @@ def render(profile: DatabaseProfile, tables: list[TableProfile]) -> str:
         if table.estimated_rows is not None:
             header += f"  (~{table.estimated_rows:,} rows)"
         lines.append(header)
-        lines += [_render_column(c) for c in table.columns if not c.sensitive]
+        lines += [
+            _render_column(c, same_names.get((table.qualified_name, c.name.lower()), []))
+            for c in table.columns
+            if not c.sensitive
+        ]
     joins = [r for r in profile.relationships if r.from_table in names and r.to_table in names]
     if joins:
         lines.append("JOINS")

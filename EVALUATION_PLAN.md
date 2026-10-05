@@ -151,6 +151,10 @@ all), with cryptic column names, dirty values and no column comments. Difficulty
   scores them.
 * Scope (--scope): `database` (BIRD's setting: the agent sees one BIRD database) or `all` (one
   connection over all 75 tables, so schema retrieval has to find the right ones).
+* Sampling: BIRD connections are profiled with sampling `full`, so the model also sees the three
+  most frequent values of free-text columns (e.g. how a lap time is written). BIRD is public data;
+  this is the setting its owner would choose. The app's default stays `safe`, so results on BIRD
+  describe a database profiled with `full`.
 * Evidence (--evidence): BIRD gives each question a hint ("evidence"), e.g. "eligible free rate =
   Free Meal Count / Enrollment". `on` appends it to the question as "Hint: ..."; `off` measures
   the agent without it. Published BIRD scores are usually with evidence.

@@ -149,6 +149,9 @@ def test_sampling_full_adds_short_examples_but_never_sensitive(pg) -> None:
     customers = {c.name: c for c in next(t for t in profile.tables if t.name == "customers").columns}
     assert customers["full_name"].hints.examples == ["Customer 01", "Customer 02", "Customer 03"]
     assert customers["email"].hints is None
+    # Examples are the most frequent values (then alphabetical), not just the first ones.
+    orders = {c.name: c for c in next(t for t in profile.tables if t.name == "orders").columns}
+    assert orders["note"].hints.examples == ["gift wrap", "note 1", "note 11"]
 
 
 def test_profile_is_cached_until_the_schema_changes(pg) -> None:

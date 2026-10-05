@@ -12,7 +12,7 @@ from app.agent.controller import AgentController
 from app.agent.executor import QueryExecutionError, execute
 from app.agent.schema_retriever import build_context, retrieve
 from app.database.connections import ConnectionConfig, ConnectionRegistry
-from app.database.profile import ColumnProfile, DatabaseProfile, SamplingMode, TableProfile
+from app.database.profile import ColumnProfile, DatabaseProfile, Relationship, SamplingMode, TableProfile
 from app.llm.client import OpenAICompatibleClient, ScriptedLLMClient
 
 
@@ -84,6 +84,29 @@ def test_large_schemas_are_narrowed_to_relevant_tables() -> None:
 def test_sensitive_columns_are_never_rendered() -> None:
     context = build_context(_profile(1), "invoices")
     assert "amount" in context.text and "card_number" not in context.text
+
+
+def test_columns_with_the_same_name_in_several_tables_are_marked() -> None:
+    def table(name: str, *columns: str) -> TableProfile:
+        cols = [ColumnProfile(name="id", type="INTEGER", nullable=False, primary_key=True)]
+        cols += [ColumnProfile(name=c, type="TEXT", nullable=True) for c in columns]
+        return TableProfile(schema_name="s", name=name, kind="table", columns=cols)
+
+    tables = [table("patient", "diagnosis", "Patient_ID"), table("exam", "Diagnosis", "patient_id", "date")]
+    join = Relationship(
+        from_table="s.exam", from_columns=["patient_id"], to_table="s.patient", to_columns=["id"]
+    )
+    profile = DatabaseProfile(
+        database_id="x", dialect="postgresql", sampling=SamplingMode.SAFE, fingerprint="f", tables=tables,
+        relationships=[join],
+    )  # fmt: skip
+    text = build_context(profile, "diagnosis").text
+    assert "    diagnosis TEXT | same name in: s.exam" in text  # case is ignored
+    assert "    Diagnosis TEXT | same name in: s.patient" in text
+    # Primary keys and join keys are not marked, so neither is a column whose only namesake is a
+    # join key elsewhere (exam.patient_id joins to patient.id; patient.Patient_ID stays unmarked).
+    assert "id INTEGER | PK\n" in text and "    patient_id TEXT\n" in text
+    assert "    Patient_ID TEXT\n" in text and text.count("same name") == 2
 
 
 # --- integration -------------------------------------------------------------------------

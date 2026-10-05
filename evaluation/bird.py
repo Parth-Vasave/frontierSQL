@@ -54,6 +54,7 @@ from app.agent.controller import AgentResult
 from app.agent.executor import _json_safe
 from app.config import get_settings
 from app.database.connections import ConnectionConfig, ConnectionRegistry, DatabaseConnection
+from app.database.profile import SamplingMode
 from evaluation import ROOT
 
 RAW_DIR = ROOT / "data" / "raw" / "bird"
@@ -207,13 +208,21 @@ def bird_url(database_url: SecretStr) -> SecretStr:
 def connect(
     url: SecretStr, scope: Scope, db_ids: list[str], timeout_seconds: float
 ) -> dict[str, DatabaseConnection]:
-    """BIRD database id -> the connection a question about it is asked on."""
+    """BIRD database id -> the connection a question about it is asked on.
+
+    Profiled with sampling `full` (a few example values of free-text columns go to the LLM), the
+    setting a database owner would choose for public data; the app's default stays `safe`."""
     registry = ConnectionRegistry(timeout_seconds)
+    full = SamplingMode.FULL
     if scope == "all":
-        everything = registry.add(ConnectionConfig(id="bird", name="BIRD (all)", url=url, schemas=db_ids))
+        everything = registry.add(
+            ConnectionConfig(id="bird", name="BIRD (all)", url=url, schemas=db_ids, sampling=full)
+        )
         return dict.fromkeys(db_ids, everything)
     return {
-        db_id: registry.add(ConnectionConfig(id=db_id, name=f"BIRD {db_id}", url=url, schemas=[db_id]))
+        db_id: registry.add(
+            ConnectionConfig(id=db_id, name=f"BIRD {db_id}", url=url, schemas=[db_id], sampling=full)
+        )
         for db_id in db_ids
     }
 

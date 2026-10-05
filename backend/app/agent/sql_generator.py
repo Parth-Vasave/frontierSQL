@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, StringConstraints, model_validator
 from app.agent.schema_retriever import SchemaContext
 from app.llm.client import LLMCall, LLMClient
 
-PROMPT_VERSION = "sql-generator/4"
+PROMPT_VERSION = "sql-generator/5"
 MAX_HISTORY_TURNS = 3
 
 SYSTEM_PROMPT = """\
@@ -32,6 +32,9 @@ Rules:
 - Always include LIMIT {max_rows} or a smaller LIMIT that fits the question.
 - Match text values exactly as listed under "values"; filter out NULLs when ranking.
 - Follow the column comments (units, meaning, which rows are aggregates rather than entities).
+- A column marked "same name in" exists in several tables and may mean different things in
+  each. Use the one whose table matches what the question is about, and name your choice under
+  "assumptions".
 
 Answer exactly what was asked:
 - Return only the columns the question asks for, in the order it asks for them. Do not add
