@@ -1,5 +1,5 @@
-"""Orchestrates one question: schema retrieval -> plan + SQL generation -> validation ->
-execution -> result checks -> answer and chart.
+"""Orchestrates one question: schema retrieval -> value lookup -> plan + SQL generation ->
+validation -> execution -> result checks -> answer and chart.
 
 A repairable failure (validator rejection, database error, or a result check such as a
 misspelled filter value) is fed back to the model for a corrected query, at most max_retries
@@ -30,7 +30,7 @@ from app.agent.answer import (
 from app.agent.chart import ChartSpec, choose_chart
 from app.agent.executor import QueryExecutionError, QueryResult, execute
 from app.agent.result_checks import ResultCheck, check_result, is_empty, probe_missing_values
-from app.agent.schema_retriever import build_context
+from app.agent.schema_retriever import SchemaContext, build_context, with_tables
 from app.agent.sql_generator import (
     MAX_HISTORY_TURNS,
     PROMPT_VERSION,
@@ -44,6 +44,7 @@ from app.agent.sql_generator import (
 )
 from app.agent.sql_validator import RejectionCode, SQLRejectedError, validate_sql
 from app.agent.units import column_units
+from app.agent.value_lookup import find_values, matched_tables
 from app.database.adapters import ErrorCategory
 from app.database.connections import DatabaseConnection
 from app.database.profile import SamplingMode
@@ -176,6 +177,26 @@ class AgentController:
             context = build_context(profile, " ".join([*(t.question for t in history), question]))
         meta.tables_used = context.table_names
         trace.record("schema_retrieval", duration_ms=ms[0], tables=context.table_names)
+
+        # Stored values that match words of the question (sampling full only: it returns data).
+        # Tables holding them join the schema shown to the model.
+        if connection.config.sampling is SamplingMode.FULL:
+            with trace.timed() as ms:
+                values = find_values(connection, profile, context.tables, question, meta.dialect)
+                added = matched_tables(values) - set(context.table_names)
+                context = with_tables(profile, context, added)
+                if section := values.render():
+                    context = SchemaContext(tables=context.tables, text=f"{context.text}\n{section}")
+            meta.tables_used = context.table_names
+            trace.record(
+                "value_lookup",
+                duration_ms=ms[0],
+                phrases=len(values.phrases),
+                columns_searched=values.columns_searched,
+                matches=sum(map(len, values.matches.values())),  # counts only: phrases are the user's words
+                tables_added=sorted(added),
+                stopped=values.skipped,
+            )
 
         # The most recent executed result. A repair that ends worse (an error, or no SQL at all)
         # must not throw away a result that ran: it is returned instead, with its checks.

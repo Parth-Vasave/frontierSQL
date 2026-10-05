@@ -154,3 +154,16 @@ def render(profile: DatabaseProfile, tables: list[TableProfile]) -> str:
 def build_context(profile: DatabaseProfile, question: str) -> SchemaContext:
     tables = retrieve(profile, question)
     return SchemaContext(tables=tables, text=render(profile, tables))
+
+
+def with_tables(profile: DatabaseProfile, context: SchemaContext, extra: set[str]) -> SchemaContext:
+    """`context` plus the tables named in `extra` and the tables they join to, in profile order."""
+    names = {t.qualified_name for t in context.tables}
+    if extra <= names:
+        return context
+    names |= extra
+    for rel in profile.relationships:
+        if rel.from_table in extra:
+            names.add(rel.to_table)
+    tables = [t for t in profile.tables if t.qualified_name in names]
+    return SchemaContext(tables=tables, text=render(profile, tables))

@@ -26,7 +26,8 @@ question ─▶ schema retrieval ─▶ LLM: plan + SQL ─▶ AST validation �
 
 | Step | Kind | What happens |
 |---|---|---|
-| Schema retrieval | deterministic | Keyword retrieval over the profiled schema (plus join neighbours); the whole schema when it is small. Sensitive columns are never rendered. |
+| Schema retrieval | deterministic | Keyword retrieval over the profiled schema (plus join neighbours); the whole schema when it is small. Sensitive columns are never rendered. Columns whose name appears in several shown tables are marked so the model chooses deliberately. |
+| Value lookup | deterministic | Sampling `full` only. Names, quoted strings and codes in the question are looked up in short text columns (case-insensitive, bounded, validated, read-only); matches are shown to the model as data, and tables holding them join the schema. |
 | Plan + SQL | LLM | One call returns a structured plan (intent, tables, metrics, filters, assumptions) and the SQL. It may ask a clarifying question instead when no reading is a reasonable default. |
 | Validation | deterministic | `sqlglot` AST checks, row limit enforced (see below). The SQL that runs is regenerated from the validated tree. |
 | Execution | deterministic | Read-only connection, statement timeout, client-side row cap. |
@@ -56,8 +57,9 @@ no conversation state. New SQL is validated exactly like any other.
 4. **Secrets.** API keys and database URLs never reach the frontend. Logs never contain question
    text, SQL, result rows, answers, URLs, passwords or keys.
 5. **Data sent to the LLM provider.** The schema, sampled values (configurable per database:
-   `off | safe | full`) and up to 30 result rows for the answer step. Databases with sampling `off`
-   get template answers, so rows never leave.
+   `off | safe | full`) and up to 30 result rows for the answer step. With `full`, also stored text
+   values that match words of the question (value lookup). Databases with sampling `off` get
+   template answers, so rows never leave.
 6. **UI-added connections** (`ALLOW_UI_CONNECTIONS`) are for local use only. Never enable it on a
    public deployment: it makes the server connect to arbitrary hosts.
 

@@ -5,7 +5,8 @@
 # sampling: how much data the profiler may read and send to the LLM
 #   off  - structure only
 #   safe - numeric/date ranges + distinct values of short categorical columns (default)
-#   full - safe + a few truncated example values of other text columns
+#   full - safe + a few truncated example values of other text columns, and stored values
+#          matching words of a question (value lookup)
 # Columns that look sensitive (email, password, phone, token, ...) are never sampled.
 
 [[databases]]
