@@ -188,11 +188,9 @@ def items_for(
     return stratified_sample(items, sample) if sample else items
 
 
-def question_text(item: dict[str, Any], evidence: bool) -> str:
-    """The question as asked: with BIRD's evidence (its hint for this question) appended, or not."""
-    if evidence and item.get("evidence"):
-        return f"{item['question']}\nHint: {item['evidence']}"
-    return str(item["question"])
+def definitions_for(item: dict[str, Any], evidence: bool) -> str | None:
+    """BIRD's evidence (its hint for the question) given as the user's definitions, or none."""
+    return str(item["evidence"]) if evidence and item.get("evidence") else None
 
 
 def database_ids(items: list[dict[str, Any]]) -> list[str]:

@@ -156,8 +156,8 @@ all), with cryptic column names, dirty values and no column comments. Difficulty
   this is the setting its owner would choose. The app's default stays `safe`, so results on BIRD
   describe a database profiled with `full`.
 * Evidence (--evidence): BIRD gives each question a hint ("evidence"), e.g. "eligible free rate =
-  Free Meal Count / Enrollment". `on` appends it to the question as "Hint: ..."; `off` measures
-  the agent without it. Published BIRD scores are usually with evidence.
+  Free Meal Count / Enrollment". `on` passes it as the user's definitions (the API's optional
+  `definitions` field, applied literally); `off` measures the agent without it. Published BIRD scores are usually with evidence.
 * Scoring, headline: BIRD's official execution accuracy (EX) and Mini-Dev's Soft F1, computed as
   BIRD's evaluation scripts compute them: the agent's final SQL and the ground-truth SQL are run
   again and their raw rows compared (EX: the same set of rows, values exactly as the driver

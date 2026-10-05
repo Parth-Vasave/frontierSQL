@@ -116,6 +116,7 @@ def test_query_validates_input(client: TestClient) -> None:
     app.state.llm = ScriptedLLMClient(lambda s, u: "{}")
     assert client.post("/api/query", json={"question": ""}).status_code == 422
     assert client.post("/api/query", json={"question": "x" * 501}).status_code == 422
+    assert client.post("/api/query", json={"question": "q", "definitions": "d" * 2001}).status_code == 422
 
 
 def test_query_is_rate_limited_before_the_agent_runs(client: TestClient) -> None:

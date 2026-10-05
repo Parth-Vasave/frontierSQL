@@ -520,7 +520,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.dataset == "bird":
             with_evidence = args.evidence == "on"
             ask = lambda item: controller.run(  # noqa: E731
-                bird.question_text(item, with_evidence), connections[item["db_id"]]
+                item["question"],
+                connections[item["db_id"]],
+                definitions=bird.definitions_for(item, with_evidence),
             )
         else:
             items = load_questions()

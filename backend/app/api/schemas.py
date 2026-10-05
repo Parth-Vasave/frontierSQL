@@ -44,6 +44,9 @@ class QueryRequest(BaseModel):
     # Earlier turns of the conversation, oldest first, for follow-up questions ("what about
     # China?"). The client keeps the conversation; the server stores nothing between requests.
     history: list[Turn] = Field(default=[], max_length=MAX_HISTORY_TURNS)
+    # The user's definitions of terms used in the question ("active customer = ordered in the
+    # last 90 days"), applied literally. Untrusted user input, like the question.
+    definitions: str | None = Field(default=None, max_length=2000)
 
 
 class AddDatabaseRequest(BaseModel):

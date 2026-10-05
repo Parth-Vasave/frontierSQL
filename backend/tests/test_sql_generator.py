@@ -79,6 +79,22 @@ def test_prompt_asks_for_exactly_the_requested_answer() -> None:
     assert "Do not add conditions the question does not state" in prompt
 
 
+def test_definitions_are_given_before_the_question_and_applied_literally() -> None:
+    from app.agent.schema_retriever import SchemaContext
+    from app.agent.sql_generator import build_user_prompt
+
+    context = SchemaContext(tables=[], text="TABLE t")
+    prompt = build_user_prompt(
+        "How many active customers?", context, definitions="active = ordered in 90 days"
+    )
+    assert prompt.endswith(
+        "Definitions given with the question:\nactive = ordered in 90 days\n\n"
+        "Question: How many active customers?"
+    )
+    assert "Definitions" not in build_user_prompt("How many?", context)
+    assert "Apply the definitions given with the question literally" in SYSTEM_PROMPT
+
+
 def test_repair_prompt_contains_the_failure_and_a_hint() -> None:
     from app.agent.schema_retriever import SchemaContext
     from app.agent.sql_generator import FailedAttempt, build_repair_prompt

@@ -158,11 +158,24 @@ class AgentController:
         self.max_retries = max_retries
         self.answer_llm = answer_llm
 
-    def run(self, question: str, connection: DatabaseConnection, history: Sequence[Turn] = ()) -> AgentResult:
-        """Answer `question`; `history` holds earlier turns of the conversation, oldest first."""
+    def run(
+        self,
+        question: str,
+        connection: DatabaseConnection,
+        history: Sequence[Turn] = (),
+        definitions: str | None = None,
+    ) -> AgentResult:
+        """Answer `question`; `history` holds earlier turns of the conversation, oldest first, and
+        `definitions` the user's definitions of terms ("active customer = ordered in the last 90
+        days"), applied literally. Both are untrusted user input, like the question."""
         history = list(history)[-MAX_HISTORY_TURNS:]
         trace = _Trace()
-        trace.record("question_received", question_length=len(question), history_turns=len(history))
+        trace.record(
+            "question_received",
+            question_length=len(question),
+            history_turns=len(history),
+            definitions_length=len(definitions or ""),
+        )
         meta = QueryMetadata(
             database_id=connection.config.id,
             dialect=connection.adapter.sqlglot_dialect,
@@ -182,7 +195,8 @@ class AgentController:
         # Tables holding them join the schema shown to the model.
         if connection.config.sampling is SamplingMode.FULL:
             with trace.timed() as ms:
-                values = find_values(connection, profile, context.tables, question, meta.dialect)
+                asked = f"{question}\n{definitions}" if definitions else question
+                values = find_values(connection, profile, context.tables, asked, meta.dialect)
                 added = matched_tables(values) - set(context.table_names)
                 context = with_tables(profile, context, added)
                 if section := values.render():
@@ -232,11 +246,18 @@ class AgentController:
                 with trace.timed() as ms:
                     if failed is None:
                         generated, call = generate_sql(
-                            self.llm, question, context, meta.dialect, self.max_rows, history
+                            self.llm, question, context, meta.dialect, self.max_rows, history, definitions
                         )
                     else:
                         generated, call = repair_sql(
-                            self.llm, question, context, meta.dialect, self.max_rows, failed, history
+                            self.llm,
+                            question,
+                            context,
+                            meta.dialect,
+                            self.max_rows,
+                            failed,
+                            history,
+                            definitions,
                         )
             except LLMOutputError as exc:
                 # The provider replied, but the reply was not usable structured output. That is a

@@ -118,6 +118,19 @@ def shop(pg):
     return registry.add(ConnectionConfig(id="shop", name="Shop", url=SecretStr(pg.agent), schemas=["shop"]))
 
 
+def test_definitions_reach_generation_and_repair_but_not_the_trace(shop) -> None:
+    replies = iter([reply("SELECT nope FROM shop.orders LIMIT 5", "x"), reply(VALID_STATUS_SQL, "x")])
+    llm = ScriptedLLMClient(lambda system, user: next(replies))
+    definitions = "late order = shipped more than 7 days after it was placed"
+    result = AgentController(llm, max_rows=100).run("How many late orders?", shop, definitions=definitions)
+
+    assert result.status == "success" and len(llm.calls) == 2  # generation, then one repair
+    assert all(definitions in user for _, user in llm.calls)
+    received = result.trace[0]
+    assert received.detail["definitions_length"] == len(definitions)
+    assert definitions not in json.dumps([e.detail for e in result.trace])
+
+
 def test_question_to_sql_to_result(shop) -> None:
     sql = "SELECT status, count(*) AS orders FROM shop.orders GROUP BY status ORDER BY status LIMIT 10"
     llm = ScriptedLLMClient(lambda system, user: reply(sql, "Counts orders by status.", "bar"))

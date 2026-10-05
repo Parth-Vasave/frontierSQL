@@ -112,7 +112,7 @@ All settings are environment variables; [.env.example](.env.example) documents e
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/query` | Question (+ optional `history`) → plan, SQL, rows, checks, chart, answer, trace, metadata |
+| `POST /api/query` | Question (+ optional `history`, and `definitions` of terms, applied literally) → plan, SQL, rows, checks, chart, answer, trace, metadata |
 | `GET /api/databases` | Connected databases and their status |
 | `GET /api/databases/{id}/profile` | Automatic profile of a database |
 | `POST /api/databases` | Add a database (only with `ALLOW_UI_CONNECTIONS=true`) |

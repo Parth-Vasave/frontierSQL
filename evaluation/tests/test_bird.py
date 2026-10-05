@@ -12,12 +12,12 @@ from pydantic import SecretStr
 
 from evaluation.bird import (
     bird_url,
+    definitions_for,
     execution_accuracy,
     items_for,
     load_dev_questions,
     load_questions,
     only_nulls,
-    question_text,
     soft_f1,
     stratified_sample,
     translate_sqlite,
@@ -47,13 +47,13 @@ def test_questions_are_converted(tmp_path: Path) -> None:
     assert second["id"] == "B1234" and second["category"] == "challenging"
 
 
-def test_evidence_is_appended_only_when_asked_and_present(tmp_path: Path) -> None:
+def test_evidence_is_given_as_definitions_only_when_asked_and_present(tmp_path: Path) -> None:
     path = tmp_path / "q.json"
     path.write_text(json.dumps(RAW))
     with_hint, without_hint = load_questions(path)
-    assert question_text(with_hint, evidence=True) == "Who won?\nHint: won = position 1"
-    assert question_text(with_hint, evidence=False) == "Who won?"
-    assert question_text(without_hint, evidence=True) == "How many?"
+    assert definitions_for(with_hint, evidence=True) == "won = position 1"
+    assert definitions_for(with_hint, evidence=False) is None
+    assert definitions_for(without_hint, evidence=True) is None
 
 
 def test_bird_url_keeps_the_account_and_server() -> None:
