@@ -4,6 +4,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /work
 
+# psql: scripts/bird.py loads the BIRD benchmark dump with it.
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY scripts/requirements.txt scripts/requirements.txt
 RUN pip install --no-cache-dir -r scripts/requirements.txt
 

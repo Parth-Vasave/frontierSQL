@@ -82,3 +82,30 @@ See [`database/schema.sql`](../database/schema.sql); every column has a comment 
 | `country_indicators` | `(country_id, year)` | population, GDP, primary energy, energy per capita and per GDP |
 | `co2_emissions` | `(country_id, year)` | total and per-capita CO₂, by fuel, land use, consumption-based, trade, cumulative, global shares |
 | `ghg_emissions` | `(country_id, year)` | methane, nitrous oxide, total GHG, per capita, temperature-change contribution |
+
+## Benchmark data: BIRD Mini-Dev
+
+Used only by the evaluation ([EVALUATION_PLAN.md](../EVALUATION_PLAN.md)), never by the app.
+
+**BIRD Mini-Dev, PostgreSQL version** — <https://github.com/bird-bench/mini_dev> · Licence:
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). 500 questions over 11 databases
+(75 tables, 3.9 million rows). Attribution: *Li et al., "Can LLM Already Serve as A Database
+Interface? A BIg Bench for Large-Scale Database Grounded Text-to-SQLs" (BIRD), NeurIPS 2023.*
+
+| | |
+|---|---|
+| Database dump | `BIRD_dev.sql` and `dev_tables.json` from the Mini-Dev package (`minidev_0703.zip`, SHA-256 `aeb211c0e39010bbdae3838bb5e8bd27dc446ed77495b1709f85ccc9bf67f2be`) |
+| Questions | Hugging Face `birdsql/bird_mini_dev` revision `f65faf4`, `mini_dev_pg` (SHA-256 `7fa740ef9225389cff6c34432120e8325d0ca3008d73db1ae38731234bc10da7`); newer than the package's copy, with one ground-truth fix |
+
+```bash
+python -m scripts.bird download                            # ~800 MB download, keeps ~1 GB in data/raw/bird/
+ADMIN_DATABASE_URL=postgresql://... python -m scripts.bird load   # needs psql; about 30 s
+python -m evaluation.bird build-expected                   # ground truth into data/processed/bird/
+```
+
+With Docker: `docker compose run --rm seed python -m scripts.bird download`, then the same with
+`load` (the seed image has psql). `load` creates the database `bird` on the same server as
+`ADMIN_DATABASE_URL`, moves each BIRD database's tables into a schema of its own (`formula_1`,
+`financial`, ...), and grants the existing `sql_agent` role CONNECT, USAGE and SELECT only. The
+dump's `OWNER TO` statements name a role from the authors' machine and are skipped. Nothing else
+is changed: no cleaning, no comments, data as published.
