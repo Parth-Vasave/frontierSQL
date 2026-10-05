@@ -92,7 +92,8 @@ def probe(shop, sql: str) -> list[str]:
 
 def test_misspelled_value_is_found(shop) -> None:
     assert probe(shop, "SELECT id FROM shop.orders WHERE status = 'Shipped' LIMIT 5") == [
-        "No row in shop.orders has status = 'Shipped'."
+        "No row in shop.orders has status = 'Shipped'. "
+        "Stored values look like: 'placed', 'returned', 'shipped'."
     ]
 
 
@@ -106,8 +107,10 @@ def test_values_in_joins_aliases_and_in_lists_are_probed(shop) -> None:
         "WHERE o.status IN ('placed', 'lost') LIMIT 5"
     )
     assert sorted(probe(shop, sql)) == [
-        "No row in shop.customers has segment = 'vip'.",
-        "No row in shop.orders has status = 'lost'.",
+        "No row in shop.customers has segment = 'vip'. "
+        "Stored values look like: 'online', 'retail', 'wholesale'.",
+        "No row in shop.orders has status = 'lost'. "
+        "Stored values look like: 'placed', 'returned', 'shipped'.",
     ]
 
 
@@ -117,9 +120,23 @@ def test_values_inside_ctes_and_subqueries_are_probed(shop) -> None:
         "SELECT id FROM s WHERE id IN (SELECT order_id FROM shop.order_items WHERE product = 'Nope') LIMIT 5"
     )
     assert sorted(probe(shop, sql)) == [
-        "No row in shop.order_items has product = 'Nope'.",
-        "No row in shop.orders has status = 'gone'.",
+        "No row in shop.order_items has product = 'Nope'. Stored values look like: 'Product 0', 'Product 1', "
+        "'Product 2', 'Product 3', 'Product 4'.",
+        "No row in shop.orders has status = 'gone'. "
+        "Stored values look like: 'placed', 'returned', 'shipped'.",
     ]
+
+
+def test_like_patterns_that_match_nothing_are_found(shop) -> None:
+    # A pattern written in the wrong format matches nothing; the hint shows the stored format.
+    sql = (
+        "SELECT id FROM shop.order_items WHERE product LIKE 'product-%' AND product NOT LIKE 'zz%' "
+        "AND product ILIKE 'product %' LIMIT 5"
+    )
+    assert probe(shop, sql) == [
+        "No row in shop.order_items has product LIKE 'product-%'. Stored values look like: 'Product 0', "
+        "'Product 1', 'Product 2', 'Product 3', 'Product 4'."
+    ]  # NOT LIKE is not probed; the ILIKE pattern matches rows
 
 
 def test_cte_columns_and_numbers_are_not_probed(shop) -> None:

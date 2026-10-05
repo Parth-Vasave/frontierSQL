@@ -28,6 +28,7 @@ from app.database.connections import DatabaseConnection
 from app.database.profile import DatabaseProfile
 
 MAX_PROBES = 3
+MAX_HINT_VALUES = 5
 
 
 class ResultCheck(BaseModel):
@@ -138,20 +139,26 @@ def _hashable(value: Any) -> Any:
     return repr(value) if isinstance(value, (list, dict)) else value
 
 
-def _string_filters(tree: exp.Expr) -> Iterator[tuple[exp.Table, str, exp.Literal]]:
-    """(table, column, literal) for each `column = 'text'` / `column IN ('text', ...)` filter
-    on a real table column, in WHERE and JOIN conditions of every scope."""
+def _string_filters(tree: exp.Expr) -> Iterator[tuple[exp.Table, str, str, exp.Literal]]:
+    """(table, column, operator, literal) for each `column = 'text'`, `column IN ('text', ...)`
+    and `column [I]LIKE 'pattern'` filter on a real table column, in WHERE and JOIN conditions of
+    every scope. Negated patterns (NOT LIKE) are left out: matching nothing is not a problem there."""
     for scope in traverse_scope(tree):
         conditions = [scope.expression.args.get("where")]
         conditions += [join.args.get("on") for join in scope.expression.args.get("joins") or []]
         for condition in conditions:
             if condition is None:
                 continue
-            for node in condition.find_all(exp.EQ, exp.In):
-                if isinstance(node, exp.EQ):
+            for node in condition.find_all(exp.EQ, exp.In, exp.Like, exp.ILike):
+                operator = {exp.Like: "LIKE", exp.ILike: "ILIKE"}.get(type(node), "=")
+                if operator != "=" and (node.args.get("negate") or isinstance(node.parent, exp.Not)):
+                    continue  # NOT LIKE: sqlglot marks it with `negate` (older versions wrap it in Not)
+                if isinstance(node, exp.In):
+                    pairs = [(node.this, value) for value in node.expressions]
+                elif operator == "=":
                     pairs = [(node.this, node.expression), (node.expression, node.this)]
                 else:
-                    pairs = [(node.this, value) for value in node.expressions]
+                    pairs = [(node.this, node.expression)]
                 for column, literal in pairs:
                     if not (isinstance(column, exp.Column) and isinstance(literal, exp.Literal)):
                         continue
@@ -160,7 +167,7 @@ def _string_filters(tree: exp.Expr) -> Iterator[tuple[exp.Table, str, exp.Litera
                     if not isinstance(source, exp.Table) or isinstance(source.this, exp.Func):
                         continue
                     if literal.is_string:
-                        yield source, column.name, literal
+                        yield source, column.name, operator, literal
 
 
 def probe_missing_values(
@@ -179,18 +186,19 @@ def probe_missing_values(
         return []
 
     checks: list[ResultCheck] = []
-    seen: set[tuple[str, str, str]] = set()
-    for table, column, literal in _string_filters(tree):
-        key = (f"{table.db}.{table.name}", column, literal.this)
+    seen: set[tuple[str, str, str, str]] = set()
+    for table, column, operator, literal in _string_filters(tree):
+        key = (f"{table.db}.{table.name}", column, operator, literal.this)
         if key in seen:
             continue
         seen.add(key)
         if len(seen) > MAX_PROBES:
             break
+        node = {"=": exp.EQ, "LIKE": exp.Like, "ILIKE": exp.ILike}[operator]
         probe = (
             exp.select(exp.Literal.number(1).as_("found"))
             .from_(exp.table_(table.name, db=table.db))
-            .where(exp.EQ(this=exp.column(column), expression=literal.copy()))
+            .where(node(this=exp.column(column), expression=literal.copy()))
             .limit(1)
         )
         try:
@@ -204,9 +212,26 @@ def probe_missing_values(
                 ResultCheck(
                     code="missing_value",
                     severity="warning",
-                    message=f"No row in {key[0]} has {column} = '{shown}'.",
+                    message=f"No row in {key[0]} has {column} {operator} '{shown}'."
+                    + _stored_values_hint(profile, table, column),
                     column=column,
                     repairable=True,
                 )
             )
     return checks
+
+
+def _stored_values_hint(profile: DatabaseProfile, table: exp.Table, column: str) -> str:
+    """How the column's values are written, from the profile only: these values were already shown
+    to the model with the schema, so the hint reveals no new data."""
+    for candidate in profile.tables:
+        if (candidate.schema_name, candidate.name) != (table.db, table.name):
+            continue
+        for col in candidate.columns:
+            if col.name.lower() == column.lower() and col.hints and not col.sensitive:
+                values = col.hints.categories or col.hints.examples or []
+                if values:
+                    listed = ", ".join(f"'{v}'" for v in values[:MAX_HINT_VALUES])
+                    more = ", ..." if len(values) > MAX_HINT_VALUES else ""
+                    return f" Stored values look like: {listed}{more}."
+    return ""
