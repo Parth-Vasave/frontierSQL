@@ -71,6 +71,14 @@ def test_prompt_asks_for_plan_assumptions_and_sparing_clarification() -> None:
     assert "reasonable default" in prompt and "LIMIT 100" in prompt
 
 
+def test_prompt_asks_for_exactly_the_requested_answer() -> None:
+    prompt = SYSTEM_PROMPT.format(dialect="postgres", max_rows=100)
+    assert "Return only the columns the question asks for" in prompt
+    assert "Do not round, cast or reformat" in prompt
+    assert "return each entity once" in prompt
+    assert "Do not add conditions the question does not state" in prompt
+
+
 def test_repair_prompt_contains_the_failure_and_a_hint() -> None:
     from app.agent.schema_retriever import SchemaContext
     from app.agent.sql_generator import FailedAttempt, build_repair_prompt
