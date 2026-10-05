@@ -93,7 +93,10 @@ def infer_relationships(tables: list[TableProfile], declared: list[Relationship]
 
 
 def _is_numeric_or_temporal(type_: sqltypes.TypeEngine) -> bool:
-    return isinstance(type_, (sqltypes.Numeric, sqltypes.Integer, sqltypes.Date, sqltypes.DateTime))
+    # Float (REAL, DOUBLE PRECISION) is listed on its own: since SQLAlchemy 2.1 it is not a Numeric.
+    return isinstance(
+        type_, (sqltypes.Numeric, sqltypes.Float, sqltypes.Integer, sqltypes.Date, sqltypes.DateTime)
+    )
 
 
 def _is_text(type_: sqltypes.TypeEngine) -> bool:

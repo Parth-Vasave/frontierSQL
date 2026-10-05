@@ -130,6 +130,9 @@ def test_shop_schema_profile(pg) -> None:
     assert orders["status"].hints.categories == ["placed", "returned", "shipped"]
     assert (orders["total"].hints.min, orders["total"].hints.max) == (10, 600)
     assert str(orders["ordered_at"].hints.min) == "2024-01-02"
+    # Floating-point columns are ranged too (SQLAlchemy 2.1's Float is not a Numeric).
+    weight = tables["order_items"]["weight_kg"].hints
+    assert (weight.min, weight.max, weight.null_fraction) == (0.5, 2.0, 0)
 
     relationships = {(r.from_table, r.from_columns[0], r.to_table, r.inferred) for r in profile.relationships}
     assert ("shop.order_items", "order_id", "shop.orders", False) in relationships
