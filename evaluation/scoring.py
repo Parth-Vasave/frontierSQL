@@ -126,6 +126,27 @@ def result_matches(
     return False, "values match column by column but not row by row" + (" in order" if order_matters else "")
 
 
+def _distinct(rows: list[list[Any]]) -> list[tuple]:
+    unique: dict[tuple, tuple] = {}
+    for row in rows:
+        unique.setdefault(tuple(_sort_key(v) for v in row), tuple(row))
+    return list(unique.values())
+
+
+def set_match(
+    expected: dict[str, Any], columns: list[str], rows: list[list[Any]], rel_tol: float = DEFAULT_REL_TOL
+) -> bool:
+    """BIRD's execution accuracy: the same columns in the same order and the same SET of rows (row
+    order and duplicate rows are ignored). Stricter than `result_matches` about extra or reordered
+    columns, more lenient about duplicates. Values compare as in `values_equal`."""
+    exp_rows, act_rows = _distinct(expected["rows"]), _distinct(rows)
+    if not exp_rows or not act_rows:
+        return not exp_rows and not act_rows
+    if len(columns) != len(expected["columns"]) or len(exp_rows) != len(act_rows):
+        return False
+    return _rows_equal(exp_rows, act_rows, False, rel_tol)
+
+
 def is_empty(rows: list[list[Any]]) -> bool:
     return not rows or (len(rows) == 1 and all(v is None or _number(v) == 0 for v in rows[0]))
 

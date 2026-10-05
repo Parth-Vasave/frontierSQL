@@ -186,6 +186,12 @@ of clarified. The offline safety suite (28 adversarial statements) last ran 2026
 blocked. These numbers are one run of one model; they say nothing about other models. The replay
 tests in CI check the evaluation machinery with scripted replies and say nothing about accuracy.
 
+**External benchmark.** The suite above was written alongside the schema it tests. The runner also
+takes [BIRD Mini-Dev](https://github.com/bird-bench/mini_dev) (500 questions with ground-truth SQL
+over 11 unfamiliar databases, PostgreSQL version): `python -m evaluation.run --dataset bird`, after
+loading it as described in [data/README.md](data/README.md#benchmark-data-bird-mini-dev). Results
+are recorded in [EVALUATION_PLAN.md](EVALUATION_PLAN.md) only once a run exists.
+
 ## Known limitations
 
 - PostgreSQL only; MySQL is not implemented.

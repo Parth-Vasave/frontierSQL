@@ -86,6 +86,8 @@ Metrics (python -m evaluation.report)
 * Result correctness (query questions)
 * Empty-result accuracy, clarification accuracy
 * Refusal rate (safety questions), adversarial SQL blocked (offline suite)
+* Set match (BIRD's execution accuracy, query questions; see BIRD Mini-Dev below), and per
+  BIRD database
 * Retry rate (questions that needed a repair), timeout rate
 * Safety violations
 * Average and median latency
@@ -117,6 +119,46 @@ LLM budget: each question takes one call for the SQL plus up to two repairs, plu
 answer with --answers llm (the default, template, needs none). On the free Gemini tier (about 5
 requests per minute and 20 per day per model) the question suite has to be run in daily batches
 with the same --run-id; the runner stops by itself after three provider failures in a row.
+
+⸻
+
+BIRD Mini-Dev (an external benchmark)
+
+The OWID suite was written alongside the schema comments and prompts it tests, on four
+well-documented tables. BIRD Mini-Dev (https://github.com/bird-bench/mini_dev, CC BY-SA 4.0) is an
+independent check: 500 questions with ground-truth SQL over 11 databases (3–13 tables each, 75 in
+all), with cryptic column names, dirty values and no column comments. Difficulty: 148 simple,
+250 moderate, 102 challenging.
+
+* Data: `python -m scripts.bird download` (pinned, SHA-256 verified) and `python -m scripts.bird
+  load` (database `bird` next to the OWID one, one schema per BIRD database, SELECT granted to
+  sql_agent). See data/README.md. Nothing from BIRD is committed.
+* Ground truth: `python -m evaluation.bird build-expected` runs BIRD's SQL (the PostgreSQL version,
+  Hugging Face revision f65faf4) on the read-only account. All 500 run; 13 return more than
+  MAX_ROWS (1,000) rows, which the agent's result would cut off, so they are excluded: 487 scoreable.
+* Scope (--scope): `database` (BIRD's setting: the agent sees one BIRD database) or `all` (one
+  connection over all 75 tables, so schema retrieval has to find the right ones).
+* Evidence (--evidence): BIRD gives each question a hint ("evidence"), e.g. "eligible free rate =
+  Free Meal Count / Enrollment". `on` appends it to the question as "Hint: ..."; `off` measures
+  the agent without it. Published BIRD scores are usually with evidence.
+* Scoring: every question gets both the project's own verdict (above) and BIRD's execution
+  accuracy, reported as "Set match": the same columns in the same order and the same set of rows
+  (row order and duplicates ignored). They differ: 29 ground-truth results contain duplicate rows,
+  which the project's scorer requires and set match ignores; set match rejects extra columns, which
+  the project's scorer allows. Neither is identical to BIRD's official script, so compare with
+  published numbers only loosely.
+* Ground-truth errors: BIRD's annotations contain mistakes. Every wrong answer is checked by hand
+  before a run is recorded, and misses caused by the ground truth are listed as such (they still
+  count as wrong in the metrics). Example: B0847 asks for the driver with the best Q2 time in race
+  19; the ground truth sorts `q2 ASC NULLS FIRST` and so returns one of the drivers with no Q2 time.
+
+    python -m evaluation.run --dataset bird --databases formula_1,california_schools --delay 45
+    python -m evaluation.run --dataset bird --scope all --evidence off
+    python -m evaluation.report evaluation/results/<id>.jsonl
+
+Token budget: per-database schemas are 0.2k–3.2k tokens. In `all` scope the keyword retriever sends a
+median of 36 of the 75 tables (about 6.6k tokens, at most 11.8k), more than Groq's free 8,000
+tokens per minute allows in one request: `all` scope needs a larger quota.
 
 ⸻
 

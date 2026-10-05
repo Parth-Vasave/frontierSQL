@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from evaluation.scoring import Outcome, is_empty, result_matches, score, values_equal
+from evaluation.scoring import Outcome, is_empty, result_matches, score, set_match, values_equal
 
 TOP3 = {"columns": ["name"], "rows": [["China"], ["United States"], ["India"]]}
 SERIES = {"columns": ["year", "co2"], "rows": [[2019, 2611.175], [2020, 2422.732]]}
@@ -106,6 +106,27 @@ def test_rows_must_line_up_across_columns() -> None:
 
 def test_empty_expected_matches_empty_result() -> None:
     assert result_matches({"columns": ["name"], "rows": []}, ["name"], [])[0]
+
+
+# --- set match (BIRD's execution accuracy) ------------------------------------------------
+
+
+def test_set_match_ignores_order_and_duplicate_rows() -> None:
+    expected = {"columns": ["name"], "rows": [["China"], ["India"], ["China"]]}
+    assert set_match(expected, ["name"], [["india"], ["China"]])
+    assert not result_matches(expected, ["name"], [["india"], ["China"]])[0]  # row count differs
+
+
+def test_set_match_needs_the_same_columns_in_the_same_order() -> None:
+    assert not set_match(SERIES, ["year", "co2", "extra"], [[2019, 2611.175, 1], [2020, 2422.732, 1]])
+    assert not set_match(SERIES, ["co2", "year"], [[2611.175, 2019], [2422.732, 2020]])
+    assert set_match(SERIES, ["y", "c"], [[2020, 2422.73], [2019, 2611.175]])  # names and rounding are fine
+
+
+def test_set_match_of_empty_results() -> None:
+    assert set_match({"columns": ["name"], "rows": []}, ["other", "columns"], [])
+    assert not set_match({"columns": ["name"], "rows": []}, ["name"], [["China"]])
+    assert not set_match(TOP3, ["name"], [])
 
 
 @pytest.mark.parametrize(

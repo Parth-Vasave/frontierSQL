@@ -74,6 +74,31 @@ def test_records_are_scored_and_written(tmp_path: Path) -> None:
     assert (summary.scored, summary.provider_failures) == (3, 0)
     assert [records[i]["correct"] for i in ("Q1", "Q2", "Q3")] == [True, True, True]
     assert records["Q1"]["retry_count"] == 1 and records["Q1"]["model"] == "m"
+    # Query questions also get BIRD's set-based verdict; other behaviours do not.
+    assert records["Q1"]["set_correct"] is True and "set_correct" not in records["Q2"]
+
+
+def test_bird_records_carry_their_database_and_are_reported_per_database(tmp_path: Path) -> None:
+    items = [
+        {"id": "B1", "category": "simple", "db_id": "formula_1", "expected_behavior": "query",
+         "question": "q1", "ground_truth": {"sql": "-", "order_matters": False}},
+        {"id": "B2", "category": "challenging", "db_id": "financial", "expected_behavior": "query",
+         "question": "q2", "ground_truth": {"sql": "-", "order_matters": False}},
+    ]  # fmt: skip
+    expected = {
+        "B1": [{"columns": ["name"], "rows": [["China"], ["China"]]}],
+        "B2": [{"columns": ["name"], "rows": [["India"]]}],
+    }
+    answers = {"B1": result(rows=[["China"]]), "B2": result(rows=[["India"]])}
+    run_items(items, lambda item: answers[item["id"]], expected, tmp_path / "b.jsonl", META, [], log=print)
+    records = load_records(tmp_path / "b.jsonl")
+    assert records["B1"]["db_id"] == "formula_1"
+    # B1: one row where the ground truth has a duplicate: wrong by row count, right as a set.
+    assert (records["B1"]["correct"], records["B1"]["set_correct"]) == (False, True)
+    metrics = compute(records, ["B1", "B2"], integrity_violations=0)
+    assert metrics["by_database"] == {"financial": "1/1 (100%)", "formula_1": "0/1 (0%)"}
+    assert metrics["set_match"] == "2/2 (100%)" and metrics["accuracy"] == "1/2 (50%)"
+    assert "| formula_1 | 0/1 (0%) |" in render(metrics)
 
 
 def test_provider_failures_are_not_run_and_stop_the_run(tmp_path: Path) -> None:
