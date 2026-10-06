@@ -35,8 +35,11 @@ def test_answers_are_scored_by_running_both_queries_again(owid: DatabaseConnecti
 
     assert same == {"ex_correct": True, "soft_f1": 1.0}
     assert extra["ex_correct"] is False and 0 < extra["soft_f1"] < 1
-    assert no_sql == failed == {"ex_correct": False, "soft_f1": 0.0}
+    assert extra["ex_miss"] == "extra columns"
+    assert no_sql == {"ex_correct": False, "soft_f1": 0.0, "ex_miss": "no result (unanswerable)"}
+    assert failed == {"ex_correct": False, "soft_f1": 0.0, "ex_miss": "no result (error)"}
     assert write["ex_correct"] is False and write["official_error"].startswith("answer: ")
+    assert write["ex_miss"] == "answer failed"
     assert "read-only" in write["official_error"]
     assert bad_gold["ex_correct"] is None and bad_gold["official_error"].startswith("ground truth: ")
     assert after_error["ex_correct"] is True

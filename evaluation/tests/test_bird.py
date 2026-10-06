@@ -17,6 +17,7 @@ from evaluation.bird import (
     items_for,
     load_dev_questions,
     load_questions,
+    miss_shape,
     only_nulls,
     soft_f1,
     stratified_sample,
@@ -172,3 +173,31 @@ def test_dev_items_carry_the_translated_ground_truth(monkeypatch: pytest.MonkeyP
                 "ground_truth_sql": {"D0001": 'SELECT "A" FROM t'}}  # fmt: skip
     (item,) = items_for("dev", expected)
     assert item["id"] == "D0001" and item["ground_truth"]["sql"] == 'SELECT "A" FROM t'
+
+
+GOLD = [("Hamilton", 1), ("Vettel", 2)]
+
+
+@pytest.mark.parametrize(
+    ("predicted", "shape"),
+    [
+        ([], "empty result"),
+        ([("Hamilton", 1, 44), ("Vettel", 2, 5)], "extra columns"),
+        ([(44, "Hamilton", 1), (5, "Vettel", 2)], "extra columns"),  # any position, any order
+        ([("Hamilton",), ("Vettel",)], "missing columns"),
+        ([("Hamilton", 1, "x"), ("Vettel", 7, "y")], "different columns"),
+        ([(1, "Hamilton"), (2, "Vettel")], "column order"),
+        ([("hamilton", Decimal("1.0")), ("Vettel", "2")], "value format"),
+        ([("Hamilton", 1)], "missing rows"),
+        ([("Hamilton", 1), ("Vettel", 2), ("Alonso", 3)], "extra rows"),
+        ([("Hamilton", 1), ("Alonso", 3)], "different rows"),
+        ([("Alonso", 3)], "different values"),
+    ],
+)
+def test_miss_shape_names_the_first_difference(predicted: list, shape: str) -> None:
+    assert not execution_accuracy(predicted, GOLD)
+    assert miss_shape(predicted, GOLD) == shape
+
+
+def test_miss_shape_when_nothing_was_expected() -> None:
+    assert miss_shape([(1,)], []) == "rows where none expected"

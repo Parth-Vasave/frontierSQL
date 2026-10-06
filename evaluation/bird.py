@@ -33,11 +33,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -368,6 +370,69 @@ def soft_f1(predicted: Sequence[tuple[Any, ...]], gold: Sequence[tuple[Any, ...]
     return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
 
+# Bounds the column matching in miss_shape: candidate column assignments tried per result.
+MAX_PROJECTIONS = 50
+
+
+def _loose(value: Any) -> Any:
+    """A value with its type and formatting blurred: numbers (and numbers written as text) to four
+    significant digits, text trimmed and lower-cased. Only for describing a miss, never for scoring."""
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float, Decimal)):
+        return f"{float(value):.4g}"
+    if isinstance(value, str):
+        try:
+            return f"{float(value.strip()):.4g}"
+        except ValueError:
+            return value.strip().lower()
+    return str(value)
+
+
+def _loose_rows(rows: Sequence[tuple[Any, ...]]) -> set[tuple[Any, ...]]:
+    return {tuple(_loose(v) for v in row) for row in rows}
+
+
+def _projection_matches(wide: Sequence[tuple[Any, ...]], narrow: Sequence[tuple[Any, ...]]) -> bool:
+    """Do some columns of `wide`, in some order, give the same rows as `narrow` (loosely)?"""
+    width = len(narrow[0])
+    columns = [{_loose(row[i]) for row in wide} for i in range(len(wide[0]))]
+    candidates = [
+        [i for i, values in enumerate(columns) if values == {_loose(row[j]) for row in narrow}]
+        for j in range(width)
+    ]
+    target = _loose_rows(narrow)
+    combos = (c for c in itertools.product(*candidates) if len(set(c)) == width)
+    for combo in itertools.islice(combos, MAX_PROJECTIONS):
+        if {tuple(_loose(row[i]) for i in combo) for row in wide} == target:
+            return True
+    return False
+
+
+def miss_shape(predicted: Sequence[tuple[Any, ...]], gold: Sequence[tuple[Any, ...]]) -> str:
+    """How a result that failed EX differs from the ground truth, from the rows alone: the first
+    structural difference found (columns, then values, then rows). A diagnosis for the report, so
+    a run shows where its misses come from; it never changes a score."""
+    if not predicted:
+        return "empty result"
+    if not gold:
+        return "rows where none expected"
+    if len(predicted[0]) > len(gold[0]):
+        return "extra columns" if _projection_matches(predicted, gold) else "different columns"
+    if len(predicted[0]) < len(gold[0]):
+        return "missing columns" if _projection_matches(gold, predicted) else "different columns"
+    pred, expected = _loose_rows(predicted), _loose_rows(gold)
+    if pred == expected:
+        return "value format"  # same values once types, rounding and case are blurred
+    if _projection_matches(predicted, gold):
+        return "column order"
+    if pred < expected:
+        return "missing rows"
+    if pred > expected:
+        return "extra rows"
+    return "different rows" if pred & expected else "different values"
+
+
 def _fetch_all(conn: psycopg.Connection, db_id: str, query: str) -> list[tuple[Any, ...]]:
     try:
         conn.execute(sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(db_id)))
@@ -397,20 +462,64 @@ def official_scorer(url: SecretStr) -> Iterator[Callable[[dict[str, Any], AgentR
                     "soft_f1": None,
                     "official_error": f"ground truth: {_first_line(exc)}",
                 }
-            if result.status != "success" or not result.sql:
-                return {"ex_correct": False, "soft_f1": 0.0}
-            try:
-                predicted = _fetch_all(conn, item["db_id"], result.sql)
-                return {
-                    "ex_correct": execution_accuracy(predicted, gold),
-                    "soft_f1": soft_f1(predicted, gold),
-                }
-            except psycopg.Error as exc:
-                return {"ex_correct": False, "soft_f1": 0.0, "official_error": f"answer: {_first_line(exc)}"}
-            except TypeError:  # unhashable values (arrays): BIRD's scripts fail on these too, scoring 0
-                return {"ex_correct": False, "soft_f1": 0.0, "official_error": "unhashable values"}
+            return _score_sql(conn, item["db_id"], result.status, result.sql, gold)
 
         yield score
+
+
+def _score_sql(
+    conn: psycopg.Connection, db_id: str, status: str, query: str | None, gold: list[tuple[Any, ...]]
+) -> dict[str, Any]:
+    """EX, Soft F1 and, for a miss, its shape (`miss_shape`) for the agent's final SQL."""
+    if status != "success" or not query:
+        return {"ex_correct": False, "soft_f1": 0.0, "ex_miss": f"no result ({status})"}
+    try:
+        predicted = _fetch_all(conn, db_id, query)
+        correct = execution_accuracy(predicted, gold)
+        return {
+            "ex_correct": correct,
+            "soft_f1": soft_f1(predicted, gold),
+            **({} if correct else {"ex_miss": miss_shape(predicted, gold)}),
+        }
+    except psycopg.Error as exc:
+        return {
+            "ex_correct": False,
+            "soft_f1": 0.0,
+            "ex_miss": "answer failed",
+            "official_error": f"answer: {_first_line(exc)}",
+        }
+    except TypeError:  # unhashable values (arrays): BIRD's scripts fail on these too, scoring 0
+        return {
+            "ex_correct": False,
+            "soft_f1": 0.0,
+            "ex_miss": "unhashable values",
+            "official_error": "unhashable values",
+        }
+
+
+def classify_misses(url: SecretStr, records: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Question id -> miss shape for every official-EX miss of a recorded run, by running its
+    recorded SQL and the ground truth again (read-only, as the scorer does). For runs recorded
+    before the scorer stored `ex_miss` (or EX itself: such records are scored here); no LLM."""
+    split = next(iter(records.values()), {}).get("split", "test")
+    questions = {q["id"]: q for q in items_for(split, load_expected(expected_path(split)))}
+    shapes: dict[str, str] = {}
+    with psycopg.connect(_libpq(url), options=SCORING_OPTIONS) as conn:
+        for qid, record in sorted(records.items()):
+            if record.get("correct") is None or record.get("ex_correct") or qid not in questions:
+                continue  # not run, an EX hit, or no longer a scoreable question
+            item = questions[qid]
+            query = item["ground_truth"]["sql"]
+            try:
+                gold = _fetch_all(conn, item["db_id"], query)
+            except psycopg.Error:
+                continue
+            scored = _score_sql(conn, item["db_id"], record["status"], record.get("sql"), gold)
+            if not scored["ex_correct"]:
+                shapes[qid] = scored["ex_miss"]
+            elif record.get("ex_correct") is False:
+                shapes[qid] = "now correct (rescored)"
+    return shapes
 
 
 def _first_line(exc: Exception) -> str:
@@ -439,11 +548,23 @@ def main(argv: list[str] | None = None) -> int:
                        help=f"larger ground truths are excluded (default {BIRD_MAX_ROWS:,})")  # fmt: skip
     build.add_argument("--split", choices=["test", "dev"], default="test",
                        help="test: Mini-Dev (default); dev: the other dev questions")  # fmt: skip
+    misses = commands.add_parser(
+        "misses", help="classify the official-EX misses of a recorded run (re-runs its SQL, no LLM)"
+    )
+    misses.add_argument("results", type=Path)
     args = parser.parse_args(argv)
 
     settings = get_settings()
     if settings.database_url is None:
         raise SystemExit("Set DATABASE_URL to the read-only sql_agent account (its server has `bird`).")
+    if args.command == "misses":
+        from evaluation.run import load_records  # imported here: evaluation.run imports this module
+
+        shapes = classify_misses(bird_url(settings.database_url), load_records(args.results))
+        for shape, count in Counter(shapes.values()).most_common():
+            print(f"{count:4}  {shape}: {', '.join(q for q, s in shapes.items() if s == shape)}")
+        print(f"{len(shapes)} misses classified")
+        return 0
     document = build_expected(
         bird_url(settings.database_url), args.max_rows, show=args.show, split=args.split
     )

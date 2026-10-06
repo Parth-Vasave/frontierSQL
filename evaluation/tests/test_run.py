@@ -312,7 +312,7 @@ def test_bird_report_leads_with_the_official_metric_and_shows_the_review_beside_
     records = {
         "B1": record("B1", "formula_1", "simple", True, True),
         "B2": record("B2", "formula_1", "moderate", False, True),
-        "B3": record("B3", "financial", "simple", False, False),
+        "B3": {**record("B3", "financial", "simple", False, False), "ex_miss": "extra columns"},
     }
     review = {"B2": {"verdict": "ground_truth_error", "note": "n"}}
     metrics = compute(records, ["B1", "B2", "B3"], integrity_violations=0, review=review)
@@ -320,8 +320,10 @@ def test_bird_report_leads_with_the_official_metric_and_shows_the_review_beside_
     assert metrics["official_by_category"] == {"moderate": "0/1 (0%)", "simple": "1/2 (50%)"}
     assert metrics["review"] == {"ground_truth_error": "0/1 (0%)", "not flagged": "1/2 (50%)"}
     assert metrics["tokens_per_question"] == 2000 and metrics["llm_calls_per_question"] == 1
+    assert metrics["ex_misses"] == {"extra columns": 1, "not recorded": 1}  # B2 predates ex_miss
     text = render(metrics)
     assert "| **Execution accuracy (BIRD's official EX)** | **1/3 (33%)** |" in text
     assert "| formula_1 | 2/2 (100%) | 1/2 (50%) |" in text
     assert "| ground_truth_error | 0/1 (0%) |" in text and "row cap: 50,000" in text
     assert "| Tokens per question | 2,000 (over 3 questions) |" in text
+    assert "| extra columns | 1 |" in text

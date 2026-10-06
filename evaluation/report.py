@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +110,7 @@ def compute(
         "official_by_category": {c: _official(rs) for c, rs in sorted(by_category.items()) if _scored_ex(rs)},
         "official_by_database": {d: _official(rs) for d, rs in sorted(by_database.items()) if _scored_ex(rs)},
         "review": _review_breakdown(scored, review) if review and official else {},
+        "ex_misses": _miss_shapes(official),
         "tokens_per_question": round(statistics.fmean(tokens)) if tokens else None,
         "tokens_recorded": len(tokens),
         "llm_calls_per_question": round(statistics.fmean(calls), 2) if calls else None,
@@ -131,6 +132,13 @@ def compute(
         },
         "wrong": sorted((r["id"], r["reason"]) for r in scored if not r["correct"]),
     }
+
+
+def _miss_shapes(official: list[dict[str, Any]]) -> dict[str, int]:
+    """How the official-EX misses differ from the ground truth (bird.miss_shape), most common first.
+    Runs recorded before the scorer stored it: `python -m evaluation.bird misses <results>`."""
+    shapes = Counter(r.get("ex_miss", "not recorded") for r in official if r["ex_correct"] is False)
+    return dict(shapes.most_common())
 
 
 def _scored_ex(records: list[dict[str, Any]]) -> bool:
@@ -204,6 +212,13 @@ def render(m: dict[str, Any]) -> str:
             "| Ground truth, by our review | Official EX |",
             "|---|---|",
             *(f"| {verdict} | {v} |" for verdict, v in m["review"].items()),
+        ]
+    if m["ex_misses"]:
+        lines += [
+            "",
+            "| Official EX miss, by how the result differs | Questions |",
+            "|---|---|",
+            *(f"| {shape} | {count} |" for shape, count in m["ex_misses"].items()),
         ]
     if m["wrong"]:
         lines += ["", "Wrong:", *(f"- {i}: {reason}" for i, reason in m["wrong"])]
