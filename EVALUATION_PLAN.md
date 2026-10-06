@@ -227,8 +227,8 @@ not committed until the licence question is decided)
   the 500 were excluded by the 1,000-row cap). Scored: 96 (46 formula_1, 50 thrombosis_prediction);
   5 not run (HTTP 429), california_schools never reached: Groq's 200,000 tokens/day limit
 * Official EX 36/96 (37.5%); Soft F1 43.7%. formula_1 18/46, thrombosis_prediction 18/50; simple
-  13/29, moderate 17/46, challenging 6/21. Computed afterwards (Phase 0 of
-  docs/bird-improvement-plan.md) by running the recorded SQL again with the official scorer
+  13/29, moderate 17/46, challenging 6/21. Computed afterwards by running the recorded SQL again
+  with the official scorer
 * At the time of the run: project scorer 48/96 (50%), set match 43/96 (45%). Seven answers that
   set match accepts fail EX: four on numeric vs float type, one a number given as text, one
   rounded, one within 0.1%
