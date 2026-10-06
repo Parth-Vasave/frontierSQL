@@ -17,6 +17,7 @@ describe('ConnectDatabaseForm', () => {
       sampling: 'off',
       status: 'ready',
       issues: [],
+      allowed_columns: [],
     }
     vi.mocked(client.addDatabase).mockResolvedValue(added)
     const onConnected = vi.fn()

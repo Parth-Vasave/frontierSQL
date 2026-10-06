@@ -50,7 +50,9 @@ no conversation state. New SQL is validated exactly like any other.
    - tables and columns must exist in the profile (CTEs cannot shadow real tables); no system
      catalogs, no cross-database references;
    - functions are allow-listed; `pg_*`, `lo_*`, `dblink`, `set_config` and similar are always denied;
-   - sensitive columns are unknown to the validator; `SELECT *` and whole-row references are rejected;
+   - sensitive columns (passwords, keys, e-mail, phone, address, birth dates, ...) are unknown to
+     the validator and never sampled, unless the database's config lists them in `allow_columns`
+     (shown in its status); `SELECT *` and whole-row references are rejected;
    - `LIMIT` is added or clamped to `MAX_ROWS`.
 3. **Limits.** Query timeout, row cap, retry cap, and per-client and global rate limits on
    `POST /api/query`.

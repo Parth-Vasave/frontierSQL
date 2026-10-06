@@ -19,7 +19,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, SecretStr, ValidationError
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 from sqlalchemy import Connection, Engine, create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
@@ -51,6 +51,18 @@ class ConnectionConfig(BaseModel):
     source: Literal["config", "ui"] = "config"
     sampling: SamplingMode = SamplingMode.SAFE
     schemas: list[str] | None = None
+    # Columns whose names look sensitive (dob, email, ...) but which the owner allows the agent to
+    # use: "schema.table.column" or "table.column". Listed in the database's public status.
+    allow_columns: list[str] = []
+
+    @field_validator("allow_columns")
+    @classmethod
+    def _qualified_names(cls, entries: list[str]) -> list[str]:
+        for entry in entries:
+            parts = entry.split(".")
+            if len(parts) not in (2, 3) or not all(parts):
+                raise ValueError(f"allow_columns entry {entry!r}: use table.column or schema.table.column")
+        return entries
 
 
 def _normalize_scheme(url: str) -> str:
@@ -122,7 +134,11 @@ class DatabaseConnection:
         """Return the cached profile, rebuilding it when asked or when the schema changed."""
         with self._lock, self.connect() as conn:
             profiler = Profiler(
-                self.adapter, self.config.sampling, self.config.schemas, self.profile_budget_seconds
+                self.adapter,
+                self.config.sampling,
+                self.config.schemas,
+                self.profile_budget_seconds,
+                self.config.allow_columns,
             )
             if self._profile is not None and not refresh:
                 tables, declared, _ = profiler.reflect(conn)  # cheap: structure only

@@ -24,6 +24,7 @@ class DatabaseInfo(BaseModel):
     sampling: SamplingMode
     status: ConnectionStatus
     issues: list[str]
+    allowed_columns: list[str]  # sensitive-looking columns the owner allowed (allow_columns)
 
     @classmethod
     def from_connection(cls, connection: DatabaseConnection) -> DatabaseInfo:
@@ -35,6 +36,7 @@ class DatabaseInfo(BaseModel):
             sampling=connection.config.sampling,
             status=connection.status,
             issues=connection.issues,
+            allowed_columns=connection.config.allow_columns,
         )
 
 

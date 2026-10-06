@@ -15,6 +15,7 @@ const DATABASE: DatabaseInfo = {
   sampling: 'safe',
   status: 'ready',
   issues: [],
+  allowed_columns: [],
 }
 
 function successResult(overrides: Partial<AgentResult> = {}): AgentResult {

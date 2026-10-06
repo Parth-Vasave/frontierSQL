@@ -5,25 +5,82 @@ from __future__ import annotations
 import psycopg
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import Column, Date, Integer, MetaData, Table
 
+from app.database.adapters import get_adapter
 from app.database.connections import ConnectionConfig, ConnectionRegistry, ConnectionStatus
 from app.database.profile import ColumnProfile, Relationship, SamplingMode, TableProfile
-from app.database.profiler import fingerprint, infer_relationships, is_sensitive
+from app.database.profiler import Profiler, fingerprint, infer_relationships, is_allowed, is_sensitive
 
 
 @pytest.mark.parametrize(
     "name",
-    ["password", "password_hash", "email", "user_email", "phone", "apiKey", "api_key", "ssn", "ip_address"],
+    [
+        "password",
+        "password_hash",
+        "email",
+        "user_email",
+        "phone",
+        "apiKey",
+        "api_key",
+        "ssn",
+        "ip_address",
+        # Every common name of a birth date, not only some of them.
+        "dob",
+        "date_of_birth",
+        "birth_date",
+        "birthdate",
+        "birthday",
+        "Birthday",
+        "birth_day",
+        "born",
+        # Numbered and run-together contact columns.
+        "email2",
+        "AdmEmail1",
+        "admemail3",
+        "telephone",
+        "phone_2",
+        "address2",
+    ],
 )
 def test_sensitive_names(name: str) -> None:
     assert is_sensitive(name)
 
 
 @pytest.mark.parametrize(
-    "name", ["co2", "population", "entity_type", "status", "emailed", "tokenizer_version"]
+    "name",
+    ["co2", "population", "entity_type", "status", "emailed", "tokenizer_version", "birthplace", "stubborn"],
 )
 def test_non_sensitive_names(name: str) -> None:
     assert not is_sensitive(name)
+
+
+def test_allowed_columns_match_with_or_without_schema() -> None:
+    assert is_allowed("f1", "drivers", "dob", ["drivers.dob"])
+    assert is_allowed("f1", "drivers", "dob", ["F1.Drivers.DOB"])
+    assert not is_allowed("f1", "drivers", "dob", ["other.drivers.dob"])
+    assert not is_allowed("f1", "drivers", "dob", ["results.dob", "drivers.email"])
+
+
+def test_allow_list_unhides_only_the_listed_column() -> None:
+    table = Table(
+        "drivers",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("dob", Date),
+        Column("birthday", Date),
+        schema="f1",
+    )
+    profiler = Profiler(get_adapter("postgresql"), allow_columns=["drivers.dob"])
+    columns = {c.name: c for c in profiler._table_profile(table, "table", None).columns}
+    assert not columns["dob"].sensitive
+    assert columns["birthday"].sensitive
+
+
+@pytest.mark.parametrize("entry", ["dob", "a.b.c.d", "drivers.", ".dob"])
+def test_allow_columns_must_name_a_table_and_column(entry: str) -> None:
+    with pytest.raises(ValueError, match="allow_columns"):
+        ConnectionConfig(id="t", name="t", url=SecretStr("postgresql://u:p@h/d"), allow_columns=[entry])
 
 
 def _table(name: str, *columns: tuple[str, bool]) -> TableProfile:
@@ -72,10 +129,22 @@ def test_fingerprint_tracks_structure_only() -> None:
 # --- integration -------------------------------------------------------------------------
 
 
-def _connect(url: str, sampling: SamplingMode = SamplingMode.SAFE, schemas: list[str] | None = None):
+def _connect(
+    url: str,
+    sampling: SamplingMode = SamplingMode.SAFE,
+    schemas: list[str] | None = None,
+    allow_columns: list[str] | None = None,
+):
     registry = ConnectionRegistry(timeout_seconds=2)
     return registry.add(
-        ConnectionConfig(id="t", name="t", url=SecretStr(url), sampling=sampling, schemas=schemas)
+        ConnectionConfig(
+            id="t",
+            name="t",
+            url=SecretStr(url),
+            sampling=sampling,
+            schemas=schemas,
+            allow_columns=allow_columns or [],
+        )
     )
 
 
@@ -152,6 +221,13 @@ def test_sampling_full_adds_short_examples_but_never_sensitive(pg) -> None:
     # Examples are the most frequent values (then alphabetical), not just the first ones.
     orders = {c.name: c for c in next(t for t in profile.tables if t.name == "orders").columns}
     assert orders["note"].hints.examples == ["gift wrap", "note 1", "note 11"]
+
+
+def test_allowed_sensitive_column_is_sampled_like_any_other(pg) -> None:
+    profile = _connect(pg.agent, schemas=["shop"], allow_columns=["shop.customers.email"]).profile()
+    customers = {c.name: c for c in next(t for t in profile.tables if t.name == "customers").columns}
+    assert not customers["email"].sensitive and customers["email"].hints is not None
+    assert customers["password_hash"].sensitive and customers["password_hash"].hints is None
 
 
 def test_profile_is_cached_until_the_schema_changes(pg) -> None:

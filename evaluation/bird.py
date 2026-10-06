@@ -77,6 +77,16 @@ SCORING_OPTIONS = (
     " -c max_parallel_workers_per_gather=0 -c synchronize_seqscans=off"
 )
 
+# Birth dates in BIRD's public, long-published data, allowed as a database owner would allow them
+# in databases.toml (allow_columns). E-mail and phone columns stay hidden: questions that need them
+# count as misses. Configuration only: the agent knows nothing about these names.
+ALLOW_COLUMNS = [
+    "european_football_2.player.birthday",
+    "financial.client.birth_date",
+    "formula_1.drivers.dob",
+    "thrombosis_prediction.patient.birthday",
+]
+
 Scope = Literal["database", "all"]
 Split = Literal["test", "dev"]
 
@@ -214,12 +224,26 @@ def connect(
     full = SamplingMode.FULL
     if scope == "all":
         everything = registry.add(
-            ConnectionConfig(id="bird", name="BIRD (all)", url=url, schemas=db_ids, sampling=full)
+            ConnectionConfig(
+                id="bird",
+                name="BIRD (all)",
+                url=url,
+                schemas=db_ids,
+                sampling=full,
+                allow_columns=ALLOW_COLUMNS,
+            )
         )
         return dict.fromkeys(db_ids, everything)
     return {
         db_id: registry.add(
-            ConnectionConfig(id=db_id, name=f"BIRD {db_id}", url=url, schemas=[db_id], sampling=full)
+            ConnectionConfig(
+                id=db_id,
+                name=f"BIRD {db_id}",
+                url=url,
+                schemas=[db_id],
+                sampling=full,
+                allow_columns=ALLOW_COLUMNS,
+            )
         )
         for db_id in db_ids
     }

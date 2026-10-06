@@ -12,6 +12,7 @@ export interface DatabaseInfo {
   sampling: SamplingMode
   status: ConnectionStatus
   issues: string[]
+  allowed_columns: string[]
 }
 
 export interface HealthResponse {

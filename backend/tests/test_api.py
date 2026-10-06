@@ -59,6 +59,18 @@ def test_list_databases_never_exposes_urls(client: TestClient, registry: Connect
     assert "hunter2" not in response.text and "127.0.0.1" not in response.text
 
 
+def test_list_databases_shows_allowed_sensitive_columns(
+    client: TestClient, registry: ConnectionRegistry
+) -> None:
+    registry.add(
+        ConnectionConfig(
+            id="x", name="X", url=SecretStr("postgresql://u:p@127.0.0.1:1/db"), allow_columns=["drivers.dob"]
+        ),
+        verify=False,
+    )
+    assert client.get("/api/databases").json()[0]["allowed_columns"] == ["drivers.dob"]
+
+
 def test_unknown_database_profile_is_404(client: TestClient) -> None:
     assert client.get("/api/databases/nope/profile").status_code == 404
 

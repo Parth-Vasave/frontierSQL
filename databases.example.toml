@@ -7,7 +7,10 @@
 #   safe - numeric/date ranges + distinct values of short categorical columns (default)
 #   full - safe + a few truncated example values of other text columns, and stored values
 #          matching words of a question (value lookup)
-# Columns that look sensitive (email, password, phone, token, ...) are never sampled.
+# Columns that look sensitive (email, password, phone, token, birth date, ...) are hidden from the
+# agent: never sampled, and queries using them are rejected.
+# allow_columns: sensitive-looking columns the agent may use anyway, as "table.column" or
+#   "schema.table.column"; listed in the database's status (GET /api/databases).
 
 [[databases]]
 id = "owid"
@@ -21,3 +24,4 @@ sampling = "safe"
 # name = "My shop database"
 # url_env = "SHOP_DATABASE_URL"
 # sampling = "off"
+# allow_columns = ["customers.birth_date"]

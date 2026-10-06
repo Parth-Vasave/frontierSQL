@@ -36,11 +36,13 @@ MAX_EXAMPLE_LENGTH = 60
 # Examples are the most frequent values among this many rows: bounded work on any table size.
 EXAMPLE_SAMPLE_ROWS = 10_000
 
-# Matches whole name parts: "email", "user_email", "password_hash" -- but not "emailed_at_count".
+# Matches whole name parts, with an optional number: "email", "user_email", "email2",
+# "password_hash" -- but not "emailed_at_count". E-mail and phone also match run together with a
+# prefix ("admemail1", "telephone"), as numbered contact columns often are.
 _SENSITIVE = re.compile(
     r"(^|_)(password|passwd|pwd|secret|token|api_?key|access_?key|private_?key|salt|ssn"
-    r"|social_security|credit_?card|card_?number|cvv|iban|email|e_?mail|phone|mobile"
-    r"|address|dob|date_of_birth|birth_?date)(_|$)"
+    r"|social_security|credit_?card|card_?number|cvv|iban|[a-z]*e_?mail|[a-z]*phone|mobile"
+    r"|address|dob|date_of_birth|birth_?date|birth_?day|born)\d*(_|$)"
 )
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
@@ -48,6 +50,13 @@ _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 def is_sensitive(column_name: str) -> bool:
     snake = _CAMEL_BOUNDARY.sub("_", column_name).lower()
     return bool(_SENSITIVE.search(snake))
+
+
+def is_allowed(schema: str, table: str, column: str, allow_columns: Iterable[str]) -> bool:
+    """True when the owner listed this column ("schema.table.column" or "table.column") as safe to
+    use although its name looks sensitive. Case-insensitive."""
+    names = {f"{schema}.{table}.{column}".lower(), f"{table}.{column}".lower()}
+    return any(entry.lower() in names for entry in allow_columns)
 
 
 def fingerprint(tables: Iterable[TableProfile], relationships: Iterable[Relationship]) -> str:
@@ -112,11 +121,13 @@ class Profiler:
         sampling: SamplingMode = SamplingMode.SAFE,
         schemas: list[str] | None = None,
         time_budget_seconds: float = 30.0,
+        allow_columns: Iterable[str] = (),
     ) -> None:
         self.adapter = adapter
         self.sampling = sampling
         self.schemas = schemas
         self.time_budget_seconds = time_budget_seconds
+        self.allow_columns = list(allow_columns)
 
     def profile(self, conn: Connection, database_id: str) -> DatabaseProfile:
         tables, declared, reflected = self.reflect(conn)
@@ -159,10 +170,10 @@ class Profiler:
                 relationships.extend(self._foreign_keys(table))
         return tables, relationships, reflected
 
-    @staticmethod
-    def _table_profile(table: Table, kind: str, estimated_rows: int | None) -> TableProfile:
+    def _table_profile(self, table: Table, kind: str, estimated_rows: int | None) -> TableProfile:
+        schema = table.schema or ""
         return TableProfile(
-            schema_name=table.schema or "",
+            schema_name=schema,
             name=table.name,
             kind=kind,
             comment=table.comment,
@@ -174,7 +185,8 @@ class Profiler:
                     nullable=bool(c.nullable),
                     comment=c.comment,
                     primary_key=c.primary_key,
-                    sensitive=is_sensitive(c.name),
+                    sensitive=is_sensitive(c.name)
+                    and not is_allowed(schema, table.name, c.name, self.allow_columns),
                 )
                 for c in table.columns
             ],
