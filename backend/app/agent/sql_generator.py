@@ -148,9 +148,11 @@ def generate_sql(
     max_rows: int,
     history: Sequence[Turn] = (),
     definitions: str | None = None,
+    temperature: float = 0.0,
 ) -> tuple[GeneratedSQL, LLMCall]:
     system = SYSTEM_PROMPT.format(dialect=dialect, max_rows=max_rows)
-    return llm.complete_json(system, build_user_prompt(question, context, history, definitions), GeneratedSQL)
+    prompt = build_user_prompt(question, context, history, definitions)
+    return llm.complete_json(system, prompt, GeneratedSQL, temperature)
 
 
 REPAIR_PROMPT_VERSION = "sql-repair/3"
@@ -234,10 +236,11 @@ def repair_sql(
     failed: FailedAttempt,
     history: Sequence[Turn] = (),
     definitions: str | None = None,
+    temperature: float = 0.0,
 ) -> tuple[GeneratedSQL, LLMCall]:
     system = SYSTEM_PROMPT.format(dialect=dialect, max_rows=max_rows)
     prompt = build_repair_prompt(question, context, failed, history, definitions)
-    return llm.complete_json(system, prompt, GeneratedSQL)
+    return llm.complete_json(system, prompt, GeneratedSQL, temperature)
 
 
 def _bare(name: str) -> str:

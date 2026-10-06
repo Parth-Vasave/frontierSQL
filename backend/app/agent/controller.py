@@ -6,6 +6,11 @@ misspelled filter value) is fed back to the model for a corrected query, at most
 times; every repaired query is validated again. If a repair ends worse than an earlier
 executed result, that earlier result is returned.
 
+With candidates > 1 (opt-in: N times the LLM calls), the whole generate-validate-execute-repair
+chain runs once per candidate, the first at temperature 0 and the others sampled, and the result
+most candidates agree on wins (see _select). Every candidate goes through the same validator,
+read-only connection, timeout and row cap; more candidates never mean less checking.
+
 Each step appends a structured TraceEvent (what happened, how long it took, key outputs),
 never the model's reasoning.
 """
@@ -14,8 +19,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -29,7 +36,7 @@ from app.agent.answer import (
 )
 from app.agent.chart import ChartSpec, choose_chart
 from app.agent.executor import QueryExecutionError, QueryResult, execute
-from app.agent.result_checks import ResultCheck, check_result, is_empty, probe_missing_values
+from app.agent.result_checks import ResultCheck, _hashable, check_result, is_empty, probe_missing_values
 from app.agent.schema_retriever import SchemaContext, build_context, with_tables
 from app.agent.sql_generator import (
     MAX_HISTORY_TURNS,
@@ -47,7 +54,7 @@ from app.agent.units import column_units
 from app.agent.value_lookup import find_values, matched_tables
 from app.database.adapters import ErrorCategory
 from app.database.connections import DatabaseConnection
-from app.database.profile import SamplingMode
+from app.database.profile import DatabaseProfile, SamplingMode
 from app.llm.client import LLMClient, LLMError, LLMOutputError
 from app.observability import current_request_id, log_event
 
@@ -108,8 +115,11 @@ class AgentResult(BaseModel):
 class _Trace:
     def __init__(self) -> None:
         self.events: list[TraceEvent] = []
+        self.candidate: int | None = None  # set while one of several candidates is being solved
 
     def record(self, step: str, status: TraceStatus = "success", duration_ms: int = 0, **detail: Any) -> None:
+        if self.candidate is not None:
+            detail = {"candidate": self.candidate, **detail}
         self.events.append(TraceEvent(step=step, status=status, duration_ms=duration_ms, detail=detail))
         level = logging.WARNING if status == "failed" else logging.INFO
         log_event(logger, "agent step", level, step=step, status=status, duration_ms=duration_ms, **detail)
@@ -144,6 +154,10 @@ REPAIRABLE_ERRORS = frozenset(
 )
 
 
+# Sampling temperature of every candidate after the first (which is the temperature-0 answer).
+CANDIDATE_TEMPERATURE = 0.7
+
+
 class AgentController:
     def __init__(
         self,
@@ -151,12 +165,17 @@ class AgentController:
         max_rows: int,
         max_retries: int = 2,
         answer_llm: LLMClient | None = None,
+        candidates: int = 1,
     ) -> None:
-        """answer_llm writes natural-language answers; without it, answers come from a template."""
+        """answer_llm writes natural-language answers; without it, answers come from a template.
+        candidates > 1 generates several queries and returns the result most of them agree on."""
+        if candidates < 1:
+            raise ValueError("candidates must be at least 1")
         self.llm = llm
         self.max_rows = max_rows
         self.max_retries = max_retries
         self.answer_llm = answer_llm
+        self.candidates = candidates
 
     def run(
         self,
@@ -212,31 +231,101 @@ class AgentController:
                 stopped=values.skipped,
             )
 
+        solved: list[_Solved] = []
+        for index in range(self.candidates):
+            trace.candidate = index + 1 if self.candidates > 1 else None
+            temperature = 0.0 if index == 0 else CANDIDATE_TEMPERATURE
+            attempt = self._solve(
+                question, connection, profile, context, meta, trace, history, definitions, temperature
+            )
+            if _provider_failed(attempt.outcome):
+                # The first candidate's failure is the answer, as with one candidate. A later one's
+                # (e.g. the quota ran out) leaves the decision to the candidates that completed.
+                if index == 0:
+                    solved.append(attempt)
+                break
+            solved.append(attempt)
+            if _decided(solved, self.candidates - index - 1):
+                break
+        trace.candidate = None
+        chosen = solved[0] if len(solved) == 1 else self._select(solved, trace)
+        return self._finish(chosen, question, connection, trace, history)
+
+    def _select(self, solved: list[_Solved], trace: _Trace) -> _Solved:
+        """The result most candidates agree on: candidates are grouped by their rows (as a set, as
+        execution accuracy compares them) or by declining the same way (clarification,
+        unanswerable); errors do not vote. The largest group wins, ties go to the group of the
+        earliest candidate, and that group's earliest candidate is returned."""
+        with trace.timed() as ms:
+            groups: dict[Any, list[int]] = {}
+            for index, attempt in enumerate(solved):
+                key = _vote_key(attempt.outcome)
+                if key is not None:
+                    groups.setdefault(key, []).append(index)
+            ranked = sorted(groups.values(), key=lambda members: (-len(members), members[0]))
+            chosen = ranked[0][0] if ranked else 0
+        trace.record(
+            "candidate_selection",
+            duration_ms=ms[0],
+            candidates=len(solved),
+            planned=self.candidates,
+            statuses=[a.outcome.status for a in solved],
+            groups=[[i + 1 for i in members] for members in ranked],
+            chosen=chosen + 1,
+            agreement=len(ranked[0]) if ranked else 0,
+        )
+        return solved[chosen]
+
+    def _finish(
+        self,
+        chosen: _Solved,
+        question: str,
+        connection: DatabaseConnection,
+        trace: _Trace,
+        history: Sequence[Turn],
+    ) -> AgentResult:
+        outcome = chosen.outcome
+        outcome.resolved_question = chosen.resolved
+        if outcome.status == "success":
+            # Numbers the user wrote in earlier turns may appear in the answer; numbers only in
+            # the model's restatement may not (it is generated text, not the user's).
+            user_text = " ".join([*(t.question for t in history), question])
+            self._answer(outcome, connection, trace, user_text)
+            with trace.timed() as ms:
+                outcome.chart = choose_chart(outcome.columns, outcome.rows, outcome.chart_suggestion)
+            trace.record(
+                "chart_selection", duration_ms=ms[0], type=outcome.chart.type, reason=outcome.chart.reason
+            )
+        status: TraceStatus = "failed" if outcome.status == "error" else "success"
+        trace.record("completed", status, retries=outcome.metadata.retry_count, **chosen.detail)
+        outcome.trace = trace.events
+        return outcome
+
+    def _solve(
+        self,
+        question: str,
+        connection: DatabaseConnection,
+        profile: DatabaseProfile,
+        context: SchemaContext,
+        base_meta: QueryMetadata,
+        trace: _Trace,
+        history: Sequence[Turn],
+        definitions: str | None,
+        temperature: float,
+    ) -> _Solved:
+        """One candidate: generate, validate, execute and check, repairing up to max_retries times."""
+        meta = base_meta.model_copy(deep=True)
         # The most recent executed result. A repair that ends worse (an error, or no SQL at all)
         # must not throw away a result that ran: it is returned instead, with its checks.
         best: AgentResult | None = None
         resolved: str | None = None  # the model's restatement of a follow-up question
 
-        def finish(outcome: AgentResult, **detail: Any) -> AgentResult:
+        def done(outcome: AgentResult, **detail: Any) -> _Solved:
             if outcome.status != "success" and best is not None:
                 outcome = best
                 detail = {"reason": "a repair attempt did not improve on an earlier result; returning it"}
                 outcome.metadata.retry_count = meta.retry_count
-            outcome.resolved_question = resolved
-            if outcome.status == "success":
-                # Numbers the user wrote in earlier turns may appear in the answer; numbers only in
-                # the model's restatement may not (it is generated text, not the user's).
-                user_text = " ".join([*(t.question for t in history), question])
-                self._answer(outcome, connection, trace, user_text)
-                with trace.timed() as ms:
-                    outcome.chart = choose_chart(outcome.columns, outcome.rows, outcome.chart_suggestion)
-                trace.record(
-                    "chart_selection", duration_ms=ms[0], type=outcome.chart.type, reason=outcome.chart.reason
-                )
-            status: TraceStatus = "failed" if outcome.status == "error" else "success"
-            trace.record("completed", status, retries=meta.retry_count, **detail)
-            outcome.trace = trace.events
-            return outcome
+            return _Solved(outcome, detail, resolved)
 
         failed: FailedAttempt | None = None
         for attempt in range(1, self.max_retries + 2):
@@ -246,7 +335,14 @@ class AgentController:
                 with trace.timed() as ms:
                     if failed is None:
                         generated, call = generate_sql(
-                            self.llm, question, context, meta.dialect, self.max_rows, history, definitions
+                            self.llm,
+                            question,
+                            context,
+                            meta.dialect,
+                            self.max_rows,
+                            history,
+                            definitions,
+                            temperature,
                         )
                     else:
                         generated, call = repair_sql(
@@ -258,6 +354,7 @@ class AgentController:
                             failed,
                             history,
                             definitions,
+                            temperature,
                         )
             except LLMOutputError as exc:
                 # The provider replied, but the reply was not usable structured output. That is a
@@ -265,13 +362,13 @@ class AgentController:
                 # the sanitized description (never the raw reply, which may hold injected text).
                 trace.record(step, "failed", ms[0], attempt=attempt, error=str(exc))
                 if attempt > self.max_retries:
-                    return finish(self._error(question, meta, "llm_output", str(exc)))
+                    return done(self._error(question, meta, "llm_output", str(exc)))
                 failed = FailedAttempt("", "generation", "invalid_model_output", str(exc), None)
                 continue
             except LLMError as exc:
                 # A genuine provider failure (network, auth, rate limit): fail fast, no retry.
                 trace.record(step, "failed", ms[0], attempt=attempt, error=str(exc), code=exc.code)
-                return finish(
+                return done(
                     self._error(question, meta, "llm_error", str(exc), exc.code, exc.retry_after_seconds)
                 )
             trace.record(
@@ -298,7 +395,7 @@ class AgentController:
                     plan=plan,
                     metadata=meta,
                 )
-                return finish(outcome, reason="question is ambiguous; clarification requested")
+                return done(outcome, reason="question is ambiguous; clarification requested")
             if generated.sql is None:
                 outcome = AgentResult(
                     status="unanswerable",
@@ -308,10 +405,10 @@ class AgentController:
                     plan=plan,
                     metadata=meta,
                 )
-                return finish(outcome, reason="question cannot be answered from this database")
+                return done(outcome, reason="question cannot be answered from this database")
             if failed is not None and failed.stage != "generation" and _same_sql(generated.sql, failed.sql):
                 trace.record(step, "failed", 0, attempt=attempt, error="repair returned the same SQL")
-                return finish(self._failed(question, meta, failed))
+                return done(self._failed(question, meta, failed))
 
             # Never trust generated SQL: only a validated, rewritten query reaches the database.
             try:
@@ -323,7 +420,7 @@ class AgentController:
                 )
                 failed = FailedAttempt(generated.sql, "validation", exc.code, exc.message, plan)
                 if exc.code not in REPAIRABLE_REJECTIONS or attempt > self.max_retries:
-                    return finish(self._failed(question, meta, failed, generated.explanation))
+                    return done(self._failed(question, meta, failed, generated.explanation))
                 continue
             meta.tables_used = validated.tables
             trace.record(
@@ -351,7 +448,7 @@ class AgentController:
                 )
                 failed = FailedAttempt(validated.sql, "execution", exc.category, exc.message, plan)
                 if exc.category not in REPAIRABLE_ERRORS or attempt > self.max_retries:
-                    return finish(self._failed(question, meta, failed, generated.explanation))
+                    return done(self._failed(question, meta, failed, generated.explanation))
                 continue
 
             meta.execution_time_ms, meta.row_count, meta.truncated = (
@@ -400,7 +497,7 @@ class AgentController:
                 message = " ".join(c.message for c in repairable)
                 failed = FailedAttempt(validated.sql, "result", repairable[0].code, message, plan)
                 continue
-            return finish(best)
+            return done(best)
         raise AssertionError("unreachable: the last attempt always returns")
 
     def _answer(
@@ -498,3 +595,37 @@ def _units_by_column(columns: list[str], units: list[str | None]) -> dict[str, s
     if len(units) != len(columns):
         return {}  # the query could not be traced column by column
     return {column: unit for column, unit in zip(columns, units, strict=True) if unit is not None}
+
+
+@dataclass(frozen=True)
+class _Solved:
+    """One candidate's outcome, the detail for its "completed" event, and its restated question."""
+
+    outcome: AgentResult
+    detail: dict[str, Any]
+    resolved: str | None
+
+
+def _provider_failed(outcome: AgentResult) -> bool:
+    return outcome.error is not None and outcome.error.category == "llm_error"
+
+
+def _vote_key(outcome: AgentResult) -> Any:
+    """What a candidate's outcome is compared by: its rows as a set (row order and duplicates
+    ignored, like execution accuracy), or the way it declined. None for errors (no vote)."""
+    if outcome.status == "success":
+        return ("rows", frozenset(tuple(_hashable(v) for v in row) for row in outcome.rows))
+    if outcome.status in ("needs_clarification", "unanswerable"):
+        return (outcome.status,)
+    return None
+
+
+def _decided(solved: list[_Solved], remaining: int) -> bool:
+    """True when the candidates still to come cannot change which group is largest."""
+    sizes = sorted(
+        Counter(k for a in solved if (k := _vote_key(a.outcome)) is not None).values(), reverse=True
+    )
+    if not sizes:
+        return remaining == 0
+    runner_up = sizes[1] if len(sizes) > 1 else 0
+    return sizes[0] > runner_up + remaining

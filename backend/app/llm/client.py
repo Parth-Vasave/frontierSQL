@@ -81,7 +81,9 @@ class LLMCall:
 class LLMClient(Protocol):
     model: str
 
-    def complete_json(self, system: str, user: str, output: type[T]) -> tuple[T, LLMCall]: ...
+    def complete_json(
+        self, system: str, user: str, output: type[T], temperature: float = 0.0
+    ) -> tuple[T, LLMCall]: ...
 
 
 def _describe_validation_error(exc: ValidationError, output: type[BaseModel]) -> str:
@@ -140,10 +142,12 @@ class OpenAICompatibleClient:
             transport=transport,
         )
 
-    def complete_json(self, system: str, user: str, output: type[T]) -> tuple[T, LLMCall]:
+    def complete_json(
+        self, system: str, user: str, output: type[T], temperature: float = 0.0
+    ) -> tuple[T, LLMCall]:
         payload = {
             "model": self.model,
-            "temperature": 0,
+            "temperature": temperature,
             "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
@@ -267,7 +271,11 @@ class ScriptedLLMClient:
         self.model = model
         self.script = script
         self.calls: list[tuple[str, str]] = []
+        self.temperatures: list[float] = []
 
-    def complete_json(self, system: str, user: str, output: type[T]) -> tuple[T, LLMCall]:
+    def complete_json(
+        self, system: str, user: str, output: type[T], temperature: float = 0.0
+    ) -> tuple[T, LLMCall]:
         self.calls.append((system, user))
+        self.temperatures.append(temperature)
         return parse_output(self.script(system, user), output), LLMCall(self.model, 0)
