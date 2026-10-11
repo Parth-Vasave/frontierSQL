@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, StringConstraints, model_validator
 from app.agent.schema_retriever import SchemaContext
 from app.llm.client import LLMCall, LLMClient
 
-PROMPT_VERSION = "sql-generator/6"
+PROMPT_VERSION = "sql-generator/7"
 MAX_HISTORY_TURNS = 3
 
 SYSTEM_PROMPT = """\
@@ -45,6 +45,9 @@ Answer exactly what was asked:
   count.
 - Return stored values as they are. Do not round, cast or reformat a returned value unless the
   question asks for it; cast only where a calculation needs it (e.g. to avoid integer division).
+- Return each stored column as its own result column. Never concatenate columns into one, even
+  when the question or a definition names them together ("address means street, city"
+  returns street and city as two columns).
 - When listing entities through a join that can repeat them, return each entity once.
 - Do not add conditions the question does not state (such as only the latest record, or only
   rows where another column is not NULL).
