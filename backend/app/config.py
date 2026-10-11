@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
     llm_api_key: SecretStr | None = None
     llm_model: str = "gemini-3.8-flash"
+    # Cap on each reply, reasoning included. Unset: the provider's default. Set it where the
+    # provider reserves the cap against its rate limits before running a request (Cerebras).
+    llm_max_output_tokens: int | None = Field(default=None, ge=256, le=65_536)
+    # For reasoning models (gpt-oss: low, medium, high). Unset: the provider's default.
+    llm_reasoning_effort: Literal["low", "medium", "high"] | None = None
 
     # Limits on POST /api/query, the endpoint that spends LLM quota (see app/api/rate_limit.py).
     # 0 turns a limit off. Per process: several workers or instances each enforce their own.

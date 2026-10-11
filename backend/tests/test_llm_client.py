@@ -54,6 +54,28 @@ def test_sends_openai_compatible_request_and_parses_json() -> None:
     assert [m["role"] for m in seen["body"]["messages"]] == ["system", "user"]
 
 
+def test_output_cap_and_reasoning_effort_are_sent_only_when_set() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=_reply('{"sql": "SELECT 1", "explanation": "x"}'))
+
+    _client(handler).complete_json("s", "u", GeneratedSQL)
+    configured = OpenAICompatibleClient(
+        "https://llm.example.test/v1",
+        SecretStr("sk-secret"),
+        "test-model",
+        transport=httpx.MockTransport(handler),
+        max_output_tokens=4096,
+        reasoning_effort="high",
+    )
+    configured.complete_json("s", "u", GeneratedSQL)
+    assert "max_tokens" not in bodies[0] and "reasoning_effort" not in bodies[0]
+    assert (bodies[1]["max_tokens"], bodies[1]["reasoning_effort"]) == (4096, "high")
+    assert "max_completion_tokens" not in bodies[1]  # an alias of max_tokens: never send both
+
+
 def test_http_errors_do_not_leak_the_response_body_or_key() -> None:
     client = _client(lambda request: httpx.Response(401, text="invalid key sk-secret"))
     with pytest.raises(LLMError) as info:
@@ -122,6 +144,8 @@ GROQ_DAILY = {
         "code": "rate_limit_exceeded",
     }
 }
+
+
 GROQ_MINUTE = {
     "error": {
         "message": "Rate limit reached on tokens per minute (TPM): Limit 8000. Please try again in 41.5s.",

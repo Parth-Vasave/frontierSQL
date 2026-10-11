@@ -28,7 +28,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.registry = registry
     app.state.llm = (
-        OpenAICompatibleClient(settings.llm_base_url, settings.llm_api_key, settings.llm_model)
+        OpenAICompatibleClient(
+            settings.llm_base_url,
+            settings.llm_api_key,
+            settings.llm_model,
+            max_output_tokens=settings.llm_max_output_tokens,
+            reasoning_effort=settings.llm_reasoning_effort,
+        )
         if settings.llm_api_key and settings.llm_api_key.get_secret_value()
         else None
     )
