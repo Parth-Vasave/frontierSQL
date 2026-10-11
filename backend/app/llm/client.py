@@ -130,8 +130,15 @@ class OpenAICompatibleClient:
         max_wait_seconds: float = 8.0,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        max_output_tokens: int | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
+        """max_output_tokens caps each reply, reasoning included (some providers reserve the cap
+        against their rate limits before a request runs); reasoning_effort ("low", "medium",
+        "high") is passed to reasoning models. Either is sent only when set."""
         self.model = model
+        self.max_output_tokens = max_output_tokens
+        self.reasoning_effort = reasoning_effort
         self.max_attempts = max_attempts
         self.max_wait_seconds = max_wait_seconds
         self._sleep = sleep
@@ -151,6 +158,10 @@ class OpenAICompatibleClient:
             "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
+        if self.max_output_tokens is not None:
+            payload["max_tokens"] = self.max_output_tokens  # the name every compatible API accepts
+        if self.reasoning_effort is not None:
+            payload["reasoning_effort"] = self.reasoning_effort
         started = time.perf_counter()
         attempt = 0
         while True:

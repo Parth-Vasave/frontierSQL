@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy.engine import make_url
 
@@ -310,10 +311,14 @@ def token_estimate(pending: int, per_question: tuple[float, str] | None, daily_t
 
 
 def measured_tokens_per_question(
-    dataset: str, model: str, answers: str, results_dir: Path = RESULTS_DIR
+    dataset: str,
+    model: str,
+    answers: str,
+    reasoning_effort: str | None = None,
+    results_dir: Path = RESULTS_DIR,
 ) -> tuple[float, str] | None:
     """Mean tokens per scored question in earlier runs of this model on this dataset, with the same
-    answer mode (LLM answers cost one more call)."""
+    answer mode (LLM answers cost one more call) and reasoning effort (more reasoning, more tokens)."""
     totals: list[int] = []
     runs: set[str] = set()
     for path in sorted(results_dir.glob("*.jsonl")):
@@ -322,6 +327,7 @@ def measured_tokens_per_question(
                 record.get("dataset", "owid") == dataset
                 and record.get("model") == model
                 and record.get("answers") == answers
+                and record.get("reasoning_effort") == reasoning_effort
                 and record.get("correct") is not None
                 and record.get("prompt_tokens") is not None
             ):
@@ -430,7 +436,11 @@ def main(argv: list[str] | None = None) -> int:
 
     default_rows = bird.BIRD_MAX_ROWS if args.dataset == "bird" else settings.max_rows
     max_rows = args.max_rows or default_rows
-    meta: dict[str, Any] = {"dataset": args.dataset, "max_rows": max_rows}
+    meta: dict[str, Any] = {
+        "dataset": args.dataset,
+        "max_rows": max_rows,
+        "reasoning_effort": settings.llm_reasoning_effort,
+    }
     resume = f"python -m evaluation.run --suite {args.suite}"
     if max_rows != default_rows:
         resume += f" --max-rows {max_rows}"
@@ -509,7 +519,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Set LLM_API_KEY to run the question suite.", file=sys.stderr)
             return 2
         llm: LLMClient = OpenAICompatibleClient(
-            settings.llm_base_url, settings.llm_api_key, settings.llm_model
+            settings.llm_base_url,
+            settings.llm_api_key,
+            settings.llm_model,
+            max_output_tokens=settings.llm_max_output_tokens,
+            reasoning_effort=settings.llm_reasoning_effort,
         )
         controller = AgentController(
             llm,
@@ -545,6 +559,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id,
         suite=args.suite,
         model=model,
+        llm_host=None if args.suite == "sql-safety" else urlsplit(settings.llm_base_url).hostname,
         answers=args.answers,
         max_retries=settings.max_retries,
         code_commit=_git_commit(),
@@ -553,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     per_question = (
         None
         if args.suite == "sql-safety"
-        else measured_tokens_per_question(args.dataset, model, args.answers)
+        else measured_tokens_per_question(args.dataset, model, args.answers, settings.llm_reasoning_effort)
     )
     with ExitStack() as stack:
         official = stack.enter_context(bird.official_scorer(url)) if args.dataset == "bird" else None

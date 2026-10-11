@@ -291,14 +291,21 @@ def test_token_estimate_uses_measured_use_only(tmp_path: Path) -> None:
          "prompt_tokens": 9000, "completion_tokens": 0},
         {"id": "B4", "dataset": "bird", "model": "m", "answers": "template", "correct": False,
          "prompt_tokens": 2600, "completion_tokens": 400},
+        {"id": "B5", "dataset": "bird", "model": "m", "answers": "template", "correct": True,
+         "reasoning_effort": "high", "prompt_tokens": 2000, "completion_tokens": 3000},
     ]  # fmt: skip
     (tmp_path / "old.jsonl").write_text("\n".join(json.dumps(r) for r in old) + "\n")
-    assert measured_tokens_per_question("bird", "m", "template", tmp_path) == (
+    assert measured_tokens_per_question("bird", "m", "template", results_dir=tmp_path) == (
         2500.0,
         "2 questions of 1 earlier run(s)",
     )
-    assert measured_tokens_per_question("bird", "m", "llm", tmp_path) is None
-    assert measured_tokens_per_question("owid", "m", "template", tmp_path) is None
+    # More reasoning costs more tokens: only runs with the same effort count.
+    assert measured_tokens_per_question("bird", "m", "template", "high", tmp_path) == (
+        5000.0,
+        "1 questions of 1 earlier run(s)",
+    )
+    assert measured_tokens_per_question("bird", "m", "llm", results_dir=tmp_path) is None
+    assert measured_tokens_per_question("owid", "m", "template", results_dir=tmp_path) is None
 
 
 def test_bird_report_leads_with_the_official_metric_and_shows_the_review_beside_it(tmp_path: Path) -> None:
