@@ -74,7 +74,13 @@ def fingerprint(tables: Iterable[TableProfile], relationships: Iterable[Relation
 
 
 def infer_relationships(tables: list[TableProfile], declared: list[Relationship]) -> list[Relationship]:
-    """Guess joins for `<name>_id` columns without a foreign key: orders.customer_id -> customers.id."""
+    """Guess joins the database does not declare, from names:
+
+    - a `<name>_id` column joins the primary key of the table `<name>`: orders.customer_id ->
+      customers.id;
+    - a column named like a declared single-column foreign key joins what that key references:
+      rulings.uuid -> cards.uuid is declared, so foreign_data.uuid -> cards.uuid too (dumps often
+      keep some foreign keys and drop others)."""
     by_name: dict[str, TableProfile] = {t.name.lower(): t for t in tables}
     declared_keys = {(r.from_table, tuple(r.from_columns)) for r in declared}
     inferred = []
@@ -100,6 +106,27 @@ def infer_relationships(tables: list[TableProfile], declared: list[Relationship]
                         )
                     )
                     break
+    references: dict[str, set[tuple[str, str]]] = {}
+    for r in declared:
+        if len(r.from_columns) == 1:
+            references.setdefault(r.from_columns[0].lower(), set()).add((r.to_table, r.to_columns[0]))
+    known = declared_keys | {(r.from_table, tuple(r.from_columns)) for r in inferred}
+    for table in tables:
+        for column in table.columns:
+            targets = references.get(column.name.lower(), set())
+            if len(targets) != 1 or column.primary_key or (table.qualified_name, (column.name,)) in known:
+                continue  # no such key, or ambiguous (same name, different targets)
+            to_table, to_column = next(iter(targets))
+            if to_table != table.qualified_name:
+                inferred.append(
+                    Relationship(
+                        from_table=table.qualified_name,
+                        from_columns=[column.name],
+                        to_table=to_table,
+                        to_columns=[to_column],
+                        inferred=True,
+                    )
+                )
     return inferred
 
 
