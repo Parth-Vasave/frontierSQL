@@ -37,11 +37,18 @@ def test_clarification_reply_is_parsed() -> None:
     assert parse_output(json.dumps(reply), GeneratedSQL).clarification_question == "Total or per capita?"
 
 
+@pytest.mark.parametrize("intent", ["lookup|aggregate", "delete", None, 3])
+def test_an_unknown_intent_is_other_and_keeps_the_reply(intent: object) -> None:
+    # The intent is only a label shown with the plan; rejecting the reply would discard valid SQL.
+    reply = {"plan": {**PLAN, "intent": intent}, "sql": "SELECT 1", "explanation": "x"}
+    generated = parse_output(json.dumps(reply), GeneratedSQL)
+    assert generated.plan is not None and generated.plan.intent == "other" and generated.sql == "SELECT 1"
+
+
 @pytest.mark.parametrize(
     "reply",
     [
         {"sql": "SELECT 1", "clarification_question": "Which year?", "explanation": "x"},  # both
-        {"plan": {**PLAN, "intent": "delete"}, "sql": "SELECT 1", "explanation": "x"},  # unknown intent
         {"plan": {**PLAN, "filters": ["x" * 301]}, "sql": "SELECT 1", "explanation": "x"},  # oversized
     ],
 )

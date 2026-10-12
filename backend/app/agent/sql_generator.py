@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, get_args
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from app.agent.schema_retriever import SchemaContext
 from app.llm.client import LLMCall, LLMClient
@@ -85,8 +85,11 @@ Reply with a JSON object only:
 _Text = Annotated[str, StringConstraints(max_length=300)]
 
 
+Intent = Literal["lookup", "aggregate", "ranking", "trend", "comparison", "other"]
+
+
 class QueryPlan(BaseModel):
-    intent: Literal["lookup", "aggregate", "ranking", "trend", "comparison", "other"] = "other"
+    intent: Intent = "other"
     tables: list[_Text] = Field(default=[], max_length=20)
     metrics: list[_Text] = Field(default=[], max_length=20)
     filters: list[_Text] = Field(default=[], max_length=20)
@@ -94,6 +97,13 @@ class QueryPlan(BaseModel):
     order_by: _Text | None = None
     limit: int | None = None
     assumptions: list[_Text] = Field(default=[], max_length=10)
+
+    @field_validator("intent", mode="before")
+    @classmethod
+    def _unknown_intent_is_other(cls, value: Any) -> Any:
+        """The intent is only a label shown with the plan: an unknown one ("lookup|aggregate", copied
+        from the prompt's list) must not throw away a reply whose SQL is fine."""
+        return value if value in get_args(Intent) else "other"
 
 
 class Turn(BaseModel):
