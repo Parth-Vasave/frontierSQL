@@ -104,9 +104,11 @@ All settings are environment variables; [.env.example](.env.example) documents e
 | Variable | Purpose |
 |---|---|
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Any OpenAI-compatible provider |
+| `LLM_MAX_OUTPUT_TOKENS`, `LLM_REASONING_EFFORT`, `LLM_REQUESTS_PER_MINUTE` | Optional: reply cap, reasoning effort, spacing of LLM calls for small per-minute limits |
 | `DATABASE_URL` / `DATABASES_CONFIG` | One database, or several via [databases.example.toml](databases.example.toml) |
 | `QUERY_TIMEOUT_SECONDS`, `MAX_ROWS`, `MAX_RETRIES` | Query guardrails |
 | `ANSWER_MODE` | `llm` (checked against the rows) or `template` (no extra LLM call) |
+| `SQL_CANDIDATES` | Candidate queries per question; above 1 the majority result wins (2-3x the LLM calls) |
 | `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_DAY`, `TRUSTED_PROXY_HOPS` | Limits on `/api/query` |
 | `ALLOW_UI_CONNECTIONS` | Local use only |
 

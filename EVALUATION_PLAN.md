@@ -129,6 +129,14 @@ compares it with --daily-tokens when given (Groq's daily token limit is not in i
 headers). Provider failures are handled by kind: a per-minute limit is waited out when the
 provider asks for at most two minutes and the question asked again; a used-up daily or account
 quota stops the run at once and says when to resume; other failures stop it after three in a row.
+A 429 asking for a wait of more than ten minutes counts as a used-up quota even without a message
+saying so (Cerebras can answer with no body, only Retry-After). Within a run, a short per-minute
+wait is first waited out inside the LLM call, so the question's earlier calls are kept; with
+LLM_REQUESTS_PER_MINUTE set the calls are spaced out so the limit is not hit at all, and --delay
+defaults to 0. --candidates N (default SQL_CANDIDATES, 1) generates up to N queries per question and
+keeps the result most agree on; it stops early once the majority is decided, so it costs 2-3x the
+calls and tokens of one candidate at N = 3. Runs record the number, and the token estimate only
+counts earlier runs with the same number.
 
 ⸻
 

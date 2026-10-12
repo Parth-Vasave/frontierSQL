@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from app.api.rate_limit import RateLimiter
+from app.api.routes import get_agent
 from app.config import Settings, get_settings
 from app.database.connections import ConnectionConfig, ConnectionRegistry
 from app.llm.client import ScriptedLLMClient
@@ -31,6 +33,13 @@ def client(registry: ConnectionRegistry) -> Iterator[TestClient]:
 def allow_ui_connections(enabled: bool) -> None:
     settings = Settings(allow_ui_connections=enabled)
     app.dependency_overrides[get_settings] = lambda: settings
+
+
+def test_the_agent_uses_the_configured_number_of_candidates() -> None:
+    llm = ScriptedLLMClient(lambda system, user: "{}")
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(llm=llm)))
+    assert get_agent(request, Settings()).candidates == 1  # type: ignore[arg-type]
+    assert get_agent(request, Settings(sql_candidates=3)).candidates == 3  # type: ignore[arg-type]
 
 
 def test_health_without_databases_is_degraded(client: TestClient) -> None:

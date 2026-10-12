@@ -47,6 +47,7 @@ def get_agent(request: Request, settings: Annotated[Settings, Depends(get_settin
         max_rows=settings.max_rows,
         max_retries=settings.max_retries,
         answer_llm=llm if settings.answer_mode == "llm" else None,
+        candidates=settings.sql_candidates,
     )
 
 
