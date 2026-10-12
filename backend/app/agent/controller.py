@@ -432,6 +432,7 @@ class AgentController:
                 tables=validated.tables,
                 limit=validated.limit,
                 limit_action=validated.limit_action,
+                float_casts=validated.float_casts,
                 plan_warnings=(
                     check_plan(plan, validated.tables, validated.limit) if plan else ["no plan returned"]
                 ),
