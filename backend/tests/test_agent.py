@@ -81,6 +81,30 @@ def test_large_schemas_are_narrowed_to_relevant_tables() -> None:
     assert [t.name for t in retrieve(_profile(20), "total invoice amount")] == ["invoices"]
 
 
+def test_a_table_linking_two_selected_tables_is_added() -> None:
+    def table(name: str, *columns: str) -> TableProfile:
+        cols = [ColumnProfile(name="id", type="INTEGER", nullable=False, primary_key=True)]
+        cols += [ColumnProfile(name=c, type="TEXT", nullable=True) for c in columns]
+        return TableProfile(schema_name="s", name=name, kind="table", columns=cols)
+
+    def join(child: str, column: str, parent: str) -> Relationship:
+        return Relationship(
+            from_table=f"s.{child}", from_columns=[column], to_table=f"s.{parent}", to_columns=["id"]
+        )
+
+    tables = [table(f"filler_{i}") for i in range(10)]
+    tables += [table("hero", "alias"), table("power", "ability"), table("hero_power", "hero_id", "power_id")]
+    tables.append(table("sidekick", "hero_id"))  # joins only one selected table: not a link
+    profile = DatabaseProfile(
+        database_id="x", dialect="postgresql", sampling=SamplingMode.SAFE, fingerprint="f", tables=tables,
+        relationships=[join("hero_power", "hero_id", "hero"), join("hero_power", "power_id", "power"),
+                       join("sidekick", "hero_id", "hero")],
+    )  # fmt: skip
+    # The question names no word of hero_power: it joins the two matched tables, so it is added.
+    names = [t.name for t in retrieve(profile, "Which ability does the alias Abomination have?")]
+    assert names == ["hero", "power", "hero_power"]
+
+
 def test_sensitive_columns_are_never_rendered() -> None:
     context = build_context(_profile(1), "invoices")
     assert "amount" in context.text and "card_number" not in context.text

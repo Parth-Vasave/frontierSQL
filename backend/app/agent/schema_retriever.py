@@ -1,7 +1,8 @@
 """Select the parts of a database profile relevant to a question and render them for the LLM.
 
 Retrieval is deterministic keyword matching over table/column names, comments and
-categorical values, plus the tables those matches join to. Small schemas are sent whole.
+categorical values, plus the tables those matches join to and the tables that link two of them.
+Small schemas are sent whole.
 The `retrieve` function is the seam where semantic (embedding) retrieval can be added later.
 
 Sensitive columns are never rendered. Sampled values are rendered as quoted data and the
@@ -69,9 +70,14 @@ def retrieve(profile: DatabaseProfile, question: str) -> list[TableProfile]:
     matched = {name for name, score in scores.items() if score > 0}
     if not matched:
         return list(profile.tables)
+    targets: dict[str, set[str]] = {}
     for rel in profile.relationships:  # bring in the tables needed to join the matches
+        targets.setdefault(rel.from_table, set()).add(rel.to_table)
         if rel.from_table in matched:
             matched.add(rel.to_table)
+    # A linking table (hero_power between superhero and superpower, race results between drivers
+    # and races) rarely shares a word with the question, but the answer runs through it.
+    matched |= {name for name, to in targets.items() if len(to & matched) >= 2}
     return [t for t in profile.tables if t.qualified_name in matched]
 
 
