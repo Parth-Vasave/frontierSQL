@@ -112,6 +112,47 @@ def test_long_retry_after_fails_fast_instead_of_blocking_the_request() -> None:
     assert sleeps == []
 
 
+def test_calls_are_spaced_out_to_stay_under_a_requests_per_minute_limit() -> None:
+    now = [100.0]
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    client = OpenAICompatibleClient(
+        "https://llm.example.test/v1",
+        SecretStr("sk-secret"),
+        "test-model",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=_reply(_OK))),
+        sleep=sleep,
+        requests_per_minute=4,
+        clock=lambda: now[0],
+    )
+    client.complete_json("s", "u", GeneratedSQL)  # the first call goes at once
+    now[0] += 5.0
+    client.complete_json("s", "u", GeneratedSQL)  # 5 s later: waits for its slot, 15 s after the first
+    now[0] += 30.0
+    client.complete_json("s", "u", GeneratedSQL)  # its slot has passed: no wait
+    assert sleeps == [10.0]
+
+
+def test_retries_wait_for_their_slot_too() -> None:
+    sleeps: list[float] = []
+    handler = _sequence(httpx.Response(503), httpx.Response(200, json=_reply(_OK)))
+    client = OpenAICompatibleClient(
+        "https://llm.example.test/v1",
+        SecretStr("sk-secret"),
+        "test-model",
+        transport=httpx.MockTransport(handler),
+        sleep=sleeps.append,
+        requests_per_minute=6,
+        clock=lambda: 0.0,  # the backoff sleep does not move this clock: the slot wait is all of it
+    )
+    client.complete_json("s", "u", GeneratedSQL)
+    assert sleeps == [1.0, 10.0]  # the backoff, then the rest of the 10 s slot
+
+
 def test_retries_are_bounded() -> None:
     calls: list[int] = []
 
@@ -183,6 +224,8 @@ def test_per_minute_limit_is_a_rate_limit_with_the_providers_wait() -> None:
     ("response", "code", "retry_after"),
     [
         (httpx.Response(429, headers={"Retry-After": "40"}), "rate_limit", 40),
+        # No body, only a wait of hours (as Cerebras answers a used-up quota): a used-up quota.
+        (httpx.Response(429, headers={"Retry-After": "11726"}), "quota_exhausted", 11726),
         (httpx.Response(429, json={"error": {"code": "insufficient_quota"}}), "quota_exhausted", None),
         (
             httpx.Response(

@@ -8,6 +8,8 @@ Transient provider failures (rate limits, overload) are retried a bounded number
 with a short wait, so a free-tier hiccup does not fail the whole question. A failure that waiting
 will not fix (a daily or account quota used up) is not retried, and is reported as such: LLMError.code says
 what kind of failure it was, and retry_after_seconds when the provider said how long to wait.
+With requests_per_minute set, calls are spaced out so a small per-minute limit (a trial tier)
+is not hit in the first place.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -41,6 +44,9 @@ _RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
 # Provider error codes are reported only when they look like an identifier ("rate_limit_exceeded").
 _PROVIDER_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,39}")
 MAX_RETRY_AFTER_SECONDS = 2 * 24 * 3600
+# A 429 that asks for a longer wait than this is a used-up quota for practical purposes, even when
+# the body does not say so (Cerebras can answer 429 with no body and only a Retry-After header).
+QUOTA_WAIT_SECONDS = 600
 
 
 class LLMError(RuntimeError):
@@ -132,6 +138,8 @@ class OpenAICompatibleClient:
         sleep: Callable[[float], None] = time.sleep,
         max_output_tokens: int | None = None,
         reasoning_effort: str | None = None,
+        requests_per_minute: int | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """max_output_tokens caps each reply, reasoning included (some providers reserve the cap
         against their rate limits before a request runs); reasoning_effort ("low", "medium",
@@ -142,6 +150,11 @@ class OpenAICompatibleClient:
         self.max_attempts = max_attempts
         self.max_wait_seconds = max_wait_seconds
         self._sleep = sleep
+        self._clock = clock
+        # Calls start at least this far apart (retries included); shared by every thread.
+        self._interval = 60.0 / requests_per_minute if requests_per_minute else 0.0
+        self._next_start = 0.0
+        self._pace_lock = threading.Lock()
         self._http = httpx.Client(
             base_url=base_url.rstrip("/") + "/",
             headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
@@ -163,9 +176,11 @@ class OpenAICompatibleClient:
         if self.reasoning_effort is not None:
             payload["reasoning_effort"] = self.reasoning_effort
         started = time.perf_counter()
+        paced = 0.0  # time spent waiting for a slot: not part of the call's duration
         attempt = 0
         while True:
             attempt += 1
+            paced += self._pace()
             try:
                 response = self._http.post("chat/completions", json=payload)
             except httpx.HTTPError as exc:
@@ -178,7 +193,7 @@ class OpenAICompatibleClient:
             if wait > self.max_wait_seconds:
                 break  # e.g. a per-minute quota: waiting that long inside a request is worse than failing
             self._sleep(wait)
-        duration_ms = int((time.perf_counter() - started) * 1000)
+        duration_ms = max(0, int((time.perf_counter() - started - paced) * 1000))
         log_event(
             logger,
             "llm call",
@@ -201,6 +216,18 @@ class OpenAICompatibleClient:
         )
         return parse_output(content, output), call
 
+    def _pace(self) -> float:
+        """Wait for this call's slot when calls are spaced out (requests_per_minute); the seconds waited."""
+        if not self._interval:
+            return 0.0
+        with self._pace_lock:
+            now = self._clock()
+            start = max(now, self._next_start)
+            self._next_start = start + self._interval
+        if start > now:
+            self._sleep(start - now)
+        return start - now
+
     @staticmethod
     def _retry_wait(response: httpx.Response, attempt: int) -> float:
         """Seconds to wait: the provider's Retry-After if given, else 1s, 2s, 4s, ..."""
@@ -211,7 +238,10 @@ class OpenAICompatibleClient:
 
 
 def _quota_exhausted(response: httpx.Response) -> bool:
-    return response.status_code == 429 and bool(_EXHAUSTED_QUOTA.search(response.text))
+    if response.status_code != 429:
+        return False
+    wait = _retry_after(response)
+    return bool(_EXHAUSTED_QUOTA.search(response.text)) or (wait is not None and wait > QUOTA_WAIT_SECONDS)
 
 
 def _retry_after(response: httpx.Response) -> int | None:

@@ -96,6 +96,7 @@ def compute(
         "answers": first.get("answers"),
         "llm_host": first.get("llm_host"),
         "reasoning_effort": first.get("reasoning_effort"),
+        "candidates": first.get("candidates", 1),
         "max_rows": first.get("max_rows"),
         "planned": len(planned_ids),
         "scored": len(scored),
@@ -154,6 +155,7 @@ def render(m: dict[str, Any]) -> str:
         f"Model: {m['model']}"
         + (f" via {m['llm_host']}" if m.get("llm_host") else "")
         + (f" | reasoning: {m['reasoning_effort']}" if m.get("reasoning_effort") else "")
+        + (f" | candidates: {m['candidates']}" if m.get("candidates", 1) > 1 else "")
         + f" | answers: {m['answers']}",
         *(
             [f"Dataset: BIRD {m['split']} | scope: {m['scope']} | evidence: {m['evidence']}"]

@@ -11,6 +11,8 @@
     python -m evaluation.run --dataset bird --scope all --evidence off
     # BIRD's other dev questions, for tuning: a fixed sample stratified by database and difficulty
     python -m evaluation.run --dataset bird --split dev --sample 300 --daily-tokens 200000
+    # several candidate queries per question, the result most agree on wins (2-3x the tokens)
+    python -m evaluation.run --dataset bird --split dev --sample 30 --candidates 3
     # metrics
     python -m evaluation.report evaluation/results/<run-id>.jsonl
 
@@ -19,8 +21,9 @@ use the database `bird` on the same server with the same account). The run is
 refused when its row counts differ from those the ground truth was built on. Provider failures
 (rate limits, outages) are recorded as "not run", never as wrong answers; after several in a row
 the run stops and can be resumed later. A used-up daily quota stops the run at once; a short
-per-minute limit is waited out (as long as the provider asks, up to two minutes) and the question
-is asked again.
+per-minute limit is waited out (as long as the provider asks, up to two minutes), within the LLM
+call where possible, else by asking the question again. With LLM_REQUESTS_PER_MINUTE set, the LLM
+calls themselves are spaced out and --delay defaults to 0.
 
 Before running, the expected token use is printed: tokens per question as measured in earlier runs
 of the same model and dataset (never assumed), against --daily-tokens when given.
@@ -316,9 +319,11 @@ def measured_tokens_per_question(
     answers: str,
     reasoning_effort: str | None = None,
     results_dir: Path = RESULTS_DIR,
+    candidates: int = 1,
 ) -> tuple[float, str] | None:
     """Mean tokens per scored question in earlier runs of this model on this dataset, with the same
-    answer mode (LLM answers cost one more call) and reasoning effort (more reasoning, more tokens)."""
+    answer mode (LLM answers cost one more call), reasoning effort (more reasoning, more tokens) and
+    number of candidate queries."""
     totals: list[int] = []
     runs: set[str] = set()
     for path in sorted(results_dir.glob("*.jsonl")):
@@ -328,6 +333,7 @@ def measured_tokens_per_question(
                 and record.get("model") == model
                 and record.get("answers") == answers
                 and record.get("reasoning_effort") == reasoning_effort
+                and record.get("candidates", 1) == candidates
                 and record.get("correct") is not None
                 and record.get("prompt_tokens") is not None
             ):
@@ -386,8 +392,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--category", help="only questions of this category")
     parser.add_argument("--limit", type=int, help="run at most this many pending questions")
     parser.add_argument(
-        "--delay", type=float, default=None, help="seconds between questions (default 15; 0 offline)"
+        "--delay",
+        type=float,
+        default=None,
+        help="seconds between questions (default 15; 0 offline or with LLM_REQUESTS_PER_MINUTE set)",
     )
+    parser.add_argument(
+        "--candidates", type=int, choices=range(1, 6), metavar="{1..5}",
+        help="candidate queries per question, the result most agree on wins (default: SQL_CANDIDATES)",
+    )  # fmt: skip
     parser.add_argument("--answers", choices=["template", "llm"], default="template",
                         help="template saves one LLM call per question (default)")  # fmt: skip
     parser.add_argument("--max-provider-failures", type=int, default=3)
@@ -436,14 +449,18 @@ def main(argv: list[str] | None = None) -> int:
 
     default_rows = bird.BIRD_MAX_ROWS if args.dataset == "bird" else settings.max_rows
     max_rows = args.max_rows or default_rows
+    candidates = 1 if args.suite == "sql-safety" else args.candidates or settings.sql_candidates
     meta: dict[str, Any] = {
         "dataset": args.dataset,
         "max_rows": max_rows,
         "reasoning_effort": settings.llm_reasoning_effort,
+        "candidates": candidates,
     }
     resume = f"python -m evaluation.run --suite {args.suite}"
     if max_rows != default_rows:
         resume += f" --max-rows {max_rows}"
+    if candidates != 1:
+        resume += f" --candidates {candidates}"
     if args.dataset == "bird":
         url = bird.bird_url(settings.database_url)
         expected_doc = bird.load_expected(bird.expected_path(args.split))
@@ -500,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.run_id:
         first = next(iter(load_records(path).values()), {})
         # Runs from before a setting was recorded used its default then.
-        defaults = {"dataset": "owid", "max_rows": settings.max_rows, "split": "test"}
+        defaults = {"dataset": "owid", "max_rows": settings.max_rows, "split": "test", "candidates": 1}
         settings_then = {k: first.get(k, defaults.get(k)) for k in meta}
         if settings_then != meta:
             print(f"Run {run_id} was started with {settings_then}; resume it with the same options.",
@@ -524,12 +541,17 @@ def main(argv: list[str] | None = None) -> int:
             settings.llm_model,
             max_output_tokens=settings.llm_max_output_tokens,
             reasoning_effort=settings.llm_reasoning_effort,
+            requests_per_minute=settings.llm_requests_per_minute,
+            # Unlike a web request, a run can wait out a per-minute limit inside the call, which
+            # keeps the question's earlier calls (and candidates) instead of asking it again.
+            max_wait_seconds=MAX_RATE_LIMIT_WAIT_SECONDS,
         )
         controller = AgentController(
             llm,
             max_rows=max_rows,
             max_retries=settings.max_retries,
             answer_llm=llm if args.answers == "llm" else None,
+            candidates=candidates,
         )
         if args.dataset == "bird":
             with_evidence = args.evidence == "on"
@@ -543,7 +565,8 @@ def main(argv: list[str] | None = None) -> int:
             ask = lambda item: controller.run(  # noqa: E731
                 item["question"], connection, [Turn(**turn) for turn in item.get("history", [])]
             )
-        model, delay = settings.llm_model, 15.0 if args.delay is None else args.delay
+        default_delay = 0.0 if settings.llm_requests_per_minute else 15.0
+        model, delay = settings.llm_model, default_delay if args.delay is None else args.delay
 
     if args.ids:
         wanted = set(args.ids.split(","))
@@ -568,7 +591,9 @@ def main(argv: list[str] | None = None) -> int:
     per_question = (
         None
         if args.suite == "sql-safety"
-        else measured_tokens_per_question(args.dataset, model, args.answers, settings.llm_reasoning_effort)
+        else measured_tokens_per_question(
+            args.dataset, model, args.answers, settings.llm_reasoning_effort, candidates=candidates
+        )
     )
     with ExitStack() as stack:
         official = stack.enter_context(bird.official_scorer(url)) if args.dataset == "bird" else None

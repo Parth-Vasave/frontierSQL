@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # "llm": natural-language answers written by the LLM (one extra call per question) and checked
     # against the rows; "template": answers built from the rows without the LLM.
     answer_mode: Literal["llm", "template"] = "llm"
+    # Candidate queries per question: above 1, the result most candidates agree on wins (about
+    # 2-3x the LLM calls and tokens of one candidate). See app/agent/controller.py.
+    sql_candidates: int = Field(default=1, ge=1, le=5)
 
     # Any OpenAI-compatible chat-completions endpoint (Groq, Gemini, OpenRouter, Ollama, ...).
     llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -38,6 +41,9 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int | None = Field(default=None, ge=256, le=65_536)
     # For reasoning models (gpt-oss: low, medium, high). Unset: the provider's default.
     llm_reasoning_effort: Literal["low", "medium", "high"] | None = None
+    # Spaces LLM calls out to stay under a small per-minute request limit (a trial tier).
+    # Unset: calls are not spaced (the provider's 429s are still retried or reported).
+    llm_requests_per_minute: int | None = Field(default=None, ge=1, le=10_000)
 
     # Limits on POST /api/query, the endpoint that spends LLM quota (see app/api/rate_limit.py).
     # 0 turns a limit off. Per process: several workers or instances each enforce their own.

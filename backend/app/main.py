@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.llm_model,
             max_output_tokens=settings.llm_max_output_tokens,
             reasoning_effort=settings.llm_reasoning_effort,
+            requests_per_minute=settings.llm_requests_per_minute,
         )
         if settings.llm_api_key and settings.llm_api_key.get_secret_value()
         else None
