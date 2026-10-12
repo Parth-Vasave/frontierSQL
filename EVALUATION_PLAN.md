@@ -164,12 +164,13 @@ all), with cryptic column names, dirty values and no column comments. Difficulty
   this is the setting its owner would choose. The app's default stays `safe`, so results on BIRD
   describe a database profiled with `full`.
 * Sensitive columns: the app hides every column whose name looks like a birth date, e-mail, phone
-  and the like. BIRD connections allow the four birth-date columns (formula_1.drivers.dob,
-  financial.client.birth_date, thrombosis_prediction.patient.birthday,
-  european_football_2.player.birthday) through `allow_columns`, as an owner of this long-published
-  data would (evaluation/bird.py ALLOW_COLUMNS). E-mail and phone columns stay hidden; questions that
-  need them count as misses. Runs before this change hid `dob` and `birth_date` and showed
-  `birthday` and california_schools' `admemail1-3`.
+  and the like. BIRD connections allow every such column of BIRD (the four birth dates,
+  california_schools' `phone` and `admemail1-3`, student_club's member `phone` and `email`) through
+  `allow_columns`, as an owner of this long-published data would (evaluation/bird.py
+  ALLOW_COLUMNS): other systems on the leaderboard see all columns. The app's default is unchanged.
+  Runs up to commit 9ba4627 kept e-mail and phone hidden (6 Mini-Dev questions need them and
+  counted as misses); runs before that hid `dob` and `birth_date` and showed `birthday` and
+  california_schools' `admemail1-3`.
 * Evidence (--evidence): BIRD gives each question a hint ("evidence"), e.g. "eligible free rate =
   Free Meal Count / Enrollment". `on` passes it as the user's definitions (the API's optional
   `definitions` field, applied literally); `off` measures the agent without it. Published BIRD scores are usually with evidence.
