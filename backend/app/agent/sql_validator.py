@@ -86,6 +86,7 @@ class ValidatedSQL:
     tables: list[str]  # qualified names of the database tables read
     limit: int
     limit_action: Literal["kept", "added", "clamped"]
+    float_casts: int = 0  # NUMERIC casts in a division computed as DOUBLE PRECISION instead
 
 
 def _reject(code: RejectionCode, message: str) -> SQLRejectedError:
@@ -259,6 +260,31 @@ def _enforce_limit(tree: exp.Query, max_rows: int) -> tuple[int, Literal["kept",
     return max_rows, "clamped"
 
 
+# Arithmetic between a cast and the division it feeds: CAST(x AS NUMERIC) * 100 / total.
+_ARITHMETIC = (exp.Paren, exp.Mul, exp.Add, exp.Sub, exp.Neg)
+
+
+def _float_divisions(tree: exp.Expr) -> int:
+    """Compute ratios in floating point: CAST(x AS NUMERIC) without precision, where it only serves
+    a division, becomes CAST(x AS DOUBLE PRECISION). Models cast to NUMERIC to avoid integer
+    division; the result then comes back as an arbitrary-precision decimal where a ratio or a
+    percentage is expected to be a float (BIRD's answers are, and an exact comparison of
+    0.0657... as decimal and as float fails). A cast with precision (NUMERIC(10, 2)) is a
+    deliberate choice and stays, and so does any cast that is not part of a division."""
+    rewritten = 0
+    for cast in list(tree.find_all(exp.Cast)):
+        to = cast.args.get("to")
+        if not isinstance(to, exp.DataType) or to.this != exp.DataType.Type.DECIMAL or to.expressions:
+            continue
+        node: exp.Expr = cast
+        while isinstance(node.parent, _ARITHMETIC):
+            node = node.parent
+        if isinstance(node.parent, exp.Div):
+            cast.set("to", exp.DataType.build("DOUBLE PRECISION"))
+            rewritten += 1
+    return rewritten
+
+
 def validate_sql(sql: str, profile: DatabaseProfile, dialect: str, max_rows: int) -> ValidatedSQL:
     """Accept or reject generated SQL. Raises SQLRejectedError with a machine-readable code."""
     tree = _parse(sql, dialect)
@@ -267,4 +293,7 @@ def validate_sql(sql: str, profile: DatabaseProfile, dialect: str, max_rows: int
     tables = _check_tables(tree, profile)
     _check_columns(tree, profile, dialect)
     limit, action = _enforce_limit(tree, max_rows)
-    return ValidatedSQL(sql=tree.sql(dialect=dialect), tables=tables, limit=limit, limit_action=action)
+    casts = _float_divisions(tree)
+    return ValidatedSQL(
+        sql=tree.sql(dialect=dialect), tables=tables, limit=limit, limit_action=action, float_casts=casts
+    )
