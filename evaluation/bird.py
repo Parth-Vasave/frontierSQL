@@ -79,13 +79,21 @@ SCORING_OPTIONS = (
     " -c max_parallel_workers_per_gather=0 -c synchronize_seqscans=off"
 )
 
-# Birth dates in BIRD's public, long-published data, allowed as a database owner would allow them
-# in databases.toml (allow_columns). E-mail and phone columns stay hidden: questions that need them
-# count as misses. Configuration only: the agent knows nothing about these names.
+# Every column the sensitive-column policy would hide in BIRD's public, long-published data (birth
+# dates, phone numbers, e-mail addresses), allowed as a database owner would allow them in
+# databases.toml (allow_columns). Other systems on the leaderboard see every column, so hiding them
+# would score questions that need them as misses for a policy reason. The app's default is unchanged.
+# Configuration only: the agent knows nothing about these names.
 ALLOW_COLUMNS = [
+    "california_schools.schools.admemail1",
+    "california_schools.schools.admemail2",
+    "california_schools.schools.admemail3",
+    "california_schools.schools.phone",
     "european_football_2.player.birthday",
     "financial.client.birth_date",
     "formula_1.drivers.dob",
+    "student_club.member.email",
+    "student_club.member.phone",
     "thrombosis_prediction.patient.birthday",
 ]
 

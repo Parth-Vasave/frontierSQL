@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
+from app.database.profiler import is_sensitive
 from evaluation.bird import (
+    ALLOW_COLUMNS,
     bird_url,
     definitions_for,
     execution_accuracy,
@@ -30,6 +32,14 @@ RAW = [
     {"question_id": 1234, "db_id": "financial", "question": "How many?", "evidence": "",
      "SQL": "SELECT count(*) FROM loan", "difficulty": "challenging"},
 ]  # fmt: skip
+
+
+def test_allowed_columns_are_ones_the_policy_would_hide() -> None:
+    # Allowing a column the policy does not hide would mean nothing; a typo would silently allow none.
+    assert sorted(set(ALLOW_COLUMNS)) == ALLOW_COLUMNS
+    for name in ALLOW_COLUMNS:
+        parts = name.split(".")  # schema.table.column
+        assert len(parts) == 3 and is_sensitive(parts[2]), name
 
 
 def test_questions_are_converted(tmp_path: Path) -> None:
