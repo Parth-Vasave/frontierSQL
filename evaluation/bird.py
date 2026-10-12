@@ -262,7 +262,11 @@ def connect(
 def fingerprint(url: SecretStr) -> dict[str, int]:
     """Row count of every BIRD table: ground truth is only valid on the data it was built from."""
     counts: dict[str, int] = {}
-    with psycopg.connect(_libpq(url), options="-c default_transaction_read_only=on") as conn:
+    # Its own statement timeout: under the account's (the agent's 5 s) a count on a busy server once
+    # timed out and ended a run (its answers were already saved).
+    timeout_ms = GROUND_TRUTH_TIMEOUT_SECONDS * 1000
+    options = f"-c default_transaction_read_only=on -c statement_timeout={timeout_ms}"
+    with psycopg.connect(_libpq(url), options=options) as conn:
         tables = conn.execute(
             "SELECT schemaname, tablename FROM pg_tables"
             " WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2"
