@@ -205,8 +205,10 @@ class AgentController:
 
         with trace.timed() as ms:
             profile = connection.profile()
-            # Earlier questions too: "what about China?" alone names no table or metric.
-            context = build_context(profile, " ".join([*(t.question for t in history), question]))
+            # Earlier questions too: "what about China?" alone names no table or metric. And the
+            # definitions: "finished the race refers to time IS NOT NULL" names the column to use.
+            terms = [*(t.question for t in history), question, definitions or ""]
+            context = build_context(profile, " ".join(terms))
         meta.tables_used = context.table_names
         trace.record("schema_retrieval", duration_ms=ms[0], tables=context.table_names)
 
