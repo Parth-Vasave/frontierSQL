@@ -106,6 +106,30 @@ def test_infer_relationships_from_names() -> None:
     assert all(r.inferred for r in inferred)
 
 
+def test_a_declared_foreign_key_is_inferred_for_columns_of_the_same_name() -> None:
+    cards = _table("cards", ("id", True), ("uuid", False))
+    rulings = _table("rulings", ("id", True), ("uuid", False))
+    foreign_data = _table("foreign_data", ("id", True), ("uuid", False))
+    declared = [
+        Relationship(from_table="s.rulings", from_columns=["uuid"], to_table="s.cards", to_columns=["uuid"])
+    ]
+    inferred = infer_relationships([cards, rulings, foreign_data], declared)
+    # foreign_data.uuid joins cards.uuid like rulings.uuid; cards.uuid is the target itself.
+    assert [(r.from_table, r.from_columns, r.to_table, r.to_columns, r.inferred) for r in inferred] == [
+        ("s.foreign_data", ["uuid"], "s.cards", ["uuid"], True)
+    ]
+
+
+def test_a_column_name_declared_with_two_targets_is_not_guessed() -> None:
+    a, b = _table("a", ("id", True)), _table("b", ("id", True))
+    x, y, z = (_table(n, ("id", True), ("ref", False)) for n in ("x", "y", "z"))
+    declared = [
+        Relationship(from_table="s.x", from_columns=["ref"], to_table="s.a", to_columns=["id"]),
+        Relationship(from_table="s.y", from_columns=["ref"], to_table="s.b", to_columns=["id"]),
+    ]
+    assert infer_relationships([a, b, x, y, z], declared) == []
+
+
 def test_declared_foreign_keys_are_not_duplicated() -> None:
     customers = _table("customers", ("id", True))
     orders = _table("orders", ("id", True), ("customer_id", False))
