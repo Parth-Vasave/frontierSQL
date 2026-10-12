@@ -242,6 +242,38 @@ def test_limit_applies_to_the_whole_union() -> None:
     assert result.limit_action == "added"
 
 
+# --- ratios in floating point -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "CAST(COUNT(*) AS NUMERIC) / COUNT(*)",
+        "CAST(COUNT(*) AS DECIMAL) * 100 / NULLIF(COUNT(*), 0)",
+        "(CAST(COUNT(*) AS DECIMAL)) / COUNT(*)",
+        "COUNT(*) / COUNT(*)::numeric",
+    ],
+)
+def test_numeric_casts_in_a_division_become_double_precision(expression: str) -> None:
+    result = validate(f"SELECT {expression} AS share FROM countries")
+    assert result.float_casts == 1
+    assert "DOUBLE PRECISION" in result.sql and "DECIMAL" not in result.sql
+    validate(result.sql)  # what runs is still a valid query
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "CAST(COUNT(*) AS NUMERIC(10, 2)) / COUNT(*)",  # a chosen precision stays
+        "CAST(COUNT(*) AS NUMERIC)",  # no division
+        "SUM(CAST(LENGTH(name) AS NUMERIC)) / COUNT(*)",  # inside an aggregate: not the ratio itself
+    ],
+)
+def test_other_numeric_casts_are_left_alone(expression: str) -> None:
+    result = validate(f"SELECT {expression} AS value FROM countries")
+    assert result.float_casts == 0 and "DOUBLE PRECISION" not in result.sql
+
+
 def test_inner_limits_do_not_count_as_the_outer_limit() -> None:
     result = validate("SELECT name FROM countries WHERE id IN (SELECT country_id FROM co2_emissions LIMIT 5)")
     assert result.limit_action == "added"
