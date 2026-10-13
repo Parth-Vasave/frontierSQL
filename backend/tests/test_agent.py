@@ -514,6 +514,17 @@ def test_ranking_led_by_nulls_is_repaired(shop) -> None:
     assert "null_first_in_ranking" in llm.calls[1][1] and "NULLS LAST" in llm.calls[1][1]
 
 
+def test_concatenated_columns_are_repaired_into_separate_columns(shop) -> None:
+    llm = sequence(
+        reply("SELECT id, status || ' / ' || ordered_at AS summary FROM shop.orders WHERE id = 1"),
+        reply("SELECT id, status, ordered_at FROM shop.orders WHERE id = 1"),
+    )
+    result = AgentController(llm, max_rows=100).run("Status and date of order 1?", shop)
+    assert result.status == "success" and result.columns == ["id", "status", "ordered_at"]
+    assert "summary joins status and ordered_at into one text value" in llm.calls[1][1]
+    assert result.checks == [] and result.metadata.retry_count == 1
+
+
 def test_earlier_result_is_kept_when_a_repair_ends_worse(shop) -> None:
     llm = sequence(
         reply("SELECT count(*) AS n FROM shop.orders WHERE status = 'Shipped'"),

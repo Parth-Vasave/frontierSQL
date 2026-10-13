@@ -102,6 +102,20 @@ def check_result(
             )
         )
 
+    if isinstance(tree, exp.Select) and len(tree.expressions) == len(result.columns):
+        for column, projection in zip(result.columns, tree.expressions, strict=True):
+            joined = _joined_columns(projection)
+            if joined:
+                checks.append(
+                    ResultCheck(
+                        code="joined_columns",
+                        severity="warning",
+                        message=f"{column} joins {_listing(joined)} into one text value.",
+                        column=column,
+                        repairable=True,
+                    )
+                )
+
     if result.row_count > 1:
         for index, column in enumerate(result.columns):
             if all(row[index] is None for row in result.rows):
@@ -137,6 +151,23 @@ def check_result(
 
 def _hashable(value: Any) -> Any:
     return repr(value) if isinstance(value, (list, dict)) else value
+
+
+def _joined_columns(projection: exp.Expr) -> list[str]:
+    """Names of the stored columns an output column concatenates (`a || ' ' || b`, CONCAT,
+    CONCAT_WS), if it joins two or more; otherwise empty. A single column with a label
+    ('$' || price) is a format, and a concatenation inside an aggregate (COUNT(DISTINCT a || b))
+    or a subquery is a computation, not an output: neither is reported."""
+    for node in projection.walk(prune=lambda n: isinstance(n, (exp.AggFunc, exp.Subquery))):
+        if isinstance(node, (exp.DPipe, exp.Concat, exp.ConcatWs)):
+            names = dict.fromkeys((c.table, c.name) for c in node.find_all(exp.Column, bfs=False))
+            if len(names) > 1:
+                return [name for _, name in names]
+    return []
+
+
+def _listing(names: list[str]) -> str:
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
 
 
 def _string_filters(tree: exp.Expr) -> Iterator[tuple[exp.Table, str, str, exp.Literal]]:

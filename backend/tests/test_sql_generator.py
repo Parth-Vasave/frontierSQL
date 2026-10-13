@@ -120,6 +120,17 @@ def test_repair_prompt_contains_the_failure_and_a_hint() -> None:
     assert "Do not repeat the same SQL" in prompt
 
 
+def test_joined_columns_repair_asks_for_separate_columns() -> None:
+    from app.agent.schema_retriever import SchemaContext
+    from app.agent.sql_generator import FailedAttempt, build_repair_prompt
+
+    message = "full_name joins first_name and last_name into one text value."
+    failed = FailedAttempt("SELECT a || b FROM t", "result", "joined_columns", message)
+    prompt = build_repair_prompt("q", SchemaContext(tables=[], text=""), failed)
+    assert f"result failed a check (joined_columns): {message}" in prompt
+    assert "its own result column" in prompt
+
+
 def test_validation_failure_is_described_as_a_rejection() -> None:
     from app.agent.schema_retriever import SchemaContext
     from app.agent.sql_generator import FailedAttempt, build_repair_prompt
