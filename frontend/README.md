@@ -1,4 +1,4 @@
-# AI SQL Analyst — frontend
+# FrontierSQL — frontend
 
 Two static pages built by Vite:
 
@@ -10,7 +10,7 @@ Two static pages built by Vite:
 
 Both are plain files in `dist/`, so any static host serves them without rewrite rules.
 
-The chat UI for the AI SQL Analyst backend, in the familiar two-pane layout of Claude.ai or
+The chat UI for the FrontierSQL backend, in the familiar two-pane layout of Claude.ai or
 ChatGPT: past chats in a left sidebar, a settings menu bottom-left (switch or connect a database,
 browse its schema, theme, help), and a conversation pane. Each answer shows the grounded answer,
 the result table and a chart, under a one-line verification summary that opens into the plan, the

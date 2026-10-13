@@ -1,5 +1,5 @@
 ---
-name: AI SQL Analyst
+name: FrontierSQL
 description: A conversational analyst in the familiar two-pane chat-app layout, where every answer shows the SQL that ran and why it was safe.
 colors:
   surface: "#ffffff"
@@ -206,7 +206,7 @@ components:
     textColor: "{colors.ink}"
 ---
 
-# Design System: AI SQL Analyst
+# Design System: FrontierSQL
 
 ## Overview
 

@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
-    app = FastAPI(title="AI SQL Analyst", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="FrontierSQL", version="0.1.0", lifespan=lifespan)
     install_observability(app)  # request IDs + request logs; added before CORS so CORS wraps it
     app.add_middleware(
         CORSMiddleware,

@@ -171,7 +171,7 @@ own address by forging the header.
 
 The limiter keeps its windows **in memory, per process**: with several instances, each enforces
 its own limits, so the effective limits multiply. The free plan runs one instance; keep it that way
-until [#7](https://github.com/Parth-Vasave/ai-sql-analyst-agent/issues/7) adds a shared store. A
+until [#7](https://github.com/Parth-Vasave/frontiersql/issues/7) adds a shared store. A
 restart (including Render's spin-down) resets the windows.
 
 **Data sent to Groq:** the schema, sampled values and up to 30 result rows for the written answer.

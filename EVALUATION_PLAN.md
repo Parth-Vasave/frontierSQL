@@ -1,8 +1,8 @@
-AI SQL Analyst — Evaluation Plan
+FrontierSQL — Evaluation Plan
 
 Objective
 
-Measure how reliably the AI SQL Analyst turns natural-language questions into correct results on
+Measure how reliably FrontierSQL turns natural-language questions into correct results on
 the built-in demo database (Our World in Data CO2 and greenhouse-gas emissions, yearly data by
 country, region and income group, pinned commit — see data/README.md), and that it stays safe.
 
