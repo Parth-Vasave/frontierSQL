@@ -6,6 +6,7 @@ import json
 import re
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import SecretStr
@@ -16,6 +17,7 @@ from evaluation.bird import (
     bird_url,
     definitions_for,
     execution_accuracy,
+    export_official,
     items_for,
     load_dev_questions,
     load_questions,
@@ -211,3 +213,23 @@ def test_miss_shape_names_the_first_difference(predicted: list, shape: str) -> N
 
 def test_miss_shape_when_nothing_was_expected() -> None:
     assert miss_shape([(1,)], []) == "rows where none expected"
+
+
+def test_export_for_birds_own_scripts(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.json"
+    questions.write_text(json.dumps(RAW))
+    records: dict[str, dict[str, Any]] = {
+        "B0007": {"status": "success", "sql": "SELECT forename\nFROM formula_1.drivers LIMIT 5"},
+        "B1234": {"status": "unanswerable", "sql": None},
+    }
+    assert export_official(records, tmp_path / "out", questions) == 1  # one answer without SQL
+
+    predictions = json.loads((tmp_path / "out" / "predict_mini_dev_PostgreSQL.json").read_text())
+    assert predictions == {  # question order; the separator and db_id as BIRD's script splits them
+        "0": "SELECT forename FROM formula_1.drivers LIMIT 5\t----- bird -----\tformula_1",
+        "1": "\t----- bird -----\tfinancial",  # no SQL: the script scores it as wrong
+    }
+    gold = (tmp_path / "out" / "mini_dev_postgresql_gold.sql").read_text().splitlines()
+    assert gold == ["SELECT forename FROM drivers\tformula_1", "SELECT count(*) FROM loan\tfinancial"]
+    lines = (tmp_path / "out" / "mini_dev_postgresql.jsonl").read_text().splitlines()
+    assert [json.loads(line)["difficulty"] for line in lines] == ["simple", "challenging"]
