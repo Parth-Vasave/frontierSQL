@@ -150,7 +150,8 @@ all), with cryptic column names, dirty values and no column comments. Difficulty
 
 * Data: `python -m scripts.bird download` (pinned, SHA-256 verified) and `python -m scripts.bird
   load` (database `bird` next to the OWID one, one schema per BIRD database, SELECT granted to
-  sql_agent). See data/README.md. Nothing from BIRD is committed.
+  sql_agent). See data/README.md. BIRD's data is not committed; run results, which quote it, are
+  (CC BY-SA 4.0, listed in evaluation/results/BIRD_RUNS.md).
 * Ground truth: `python -m evaluation.bird build-expected` runs BIRD's SQL (the PostgreSQL version,
   Hugging Face revision f65faf4) on the read-only account. All 500 run and all 500 are scored:
   BIRD runs raise the agent's row cap to 50,000 (--max-rows; the app's MAX_ROWS is unchanged), and
@@ -225,12 +226,50 @@ Evaluation History
 
 Record every run here with its report. Never add numbers that were not produced by a run.
 
+2026-10-13 — BIRD Mini-Dev, COMPLETE, final test run (run 20261013-122627-bird-database)
+Commit: a226871 (tag bird-minidev-final) | Dataset: BIRD Mini-Dev PostgreSQL f65faf4 | Model:
+gpt-oss-120b (Cerebras) | scope: database | evidence: on | answers: template | 1 candidate | default
+reasoning effort | max retries 2 | row cap 50,000
+Results: evaluation/results/20261013-122627-bird-database.jsonl
+* Official EX 284/500 (56.8%); Soft F1 58.0%; simple 105/148, moderate 132/250, challenging 47/102;
+  SQL execution success 492/500; retries 27/500; no timeouts, no safety violations; 4,440 tokens
+  per question
+* BIRD's own evaluation_ex.py, run on the exported answers: 56.80, the same per difficulty (steps
+  in evaluation/results/BIRD_RUNS.md); 56.60 with the July 2025 package's older ground-truth file,
+  which still has BIRD's earlier SQL for B0879
+* Against the baseline below: 48 fixed, 22 broken. Hand review (35 questions): EX on the 465
+  unflagged questions 282/465 (60.6%)
+* Changes since the baseline, each measured on the dev split first: schema retrieval uses the hint
+  and adds linking tables; an unknown plan intent no longer rejects a reply; joins inferred for
+  columns named like a declared foreign key; NUMERIC casts in divisions computed in floating point;
+  phone and e-mail columns visible to BIRD runs; answers that concatenate columns sent to repair.
+  They came from reading the baseline's 242 misses, so this run is not independent of the test
+  set; it was run once
+* Dev runs in between, including what was reverted or not kept (a prompt rule for hint formulas,
+  reasoning effort high, deterministic SQL rewrites): evaluation/results/BIRD_RUNS.md
+
+2026-10-12 — BIRD Mini-Dev, COMPLETE, test baseline (run 20261012-094139-bird-database)
+Commit: 6f85d14 | Dataset and settings as in the final run above
+Results: evaluation/results/20261012-094139-bird-database.jsonl
+* Official EX 258/500 (51.6%); Soft F1 52.0%; simple 96/148, moderate 124/250, challenging 38/102;
+  SQL execution success 464/500; retries 35/500; no timeouts, no safety violations; 4,216 tokens per
+  question
+* Largest miss shapes: different values 101, different columns 29, value format 28, unanswerable 28.
+  All 242 misses were read; the fixes in the final run above came from them
+
+2026-10-05 to 2026-10-07 — BIRD Mini-Dev, PARTIAL (run 20261005-184558-bird-database) — not comparable
+Commit: 6960b34 | Model: openai/gpt-oss-120b (Groq free tier) | otherwise as above
+Results: evaluation/results/20261005-184558-bird-database.jsonl
+* 87 of 500 scored (debit_card_specializing, student_club, thrombosis_prediction) before the run
+  stopped with its database container. Official EX 54/87; Soft F1 60.9%. Three databases: not a
+  result
+
 2026-10-05 — BIRD dev split, smoke run of 10 questions (run 20261005-160047-bird-dev-database) — a
 pipeline check, not a result
 Commit: 4808884 (working tree had an unrelated uncommitted change) | Dataset: BIRD dev 2025-11-06
 3c11fb1 | Model: openai/gpt-oss-120b (Groq) | scope: database | evidence: on | answers: template |
 --sample 10 (9 simple, 1 moderate) | row cap 50,000
-Results: evaluation/results/20261005-160047-bird-dev-database.jsonl (local, not committed)
+Results: evaluation/results/20261005-160047-bird-dev-database.jsonl
 * Purpose: the Phase 0 pipeline end to end with a real model: 10/10 scored, no provider failures,
   explanation, plan, checks and token counts recorded for every question
 * Official EX 6/10; Soft F1 72.9%; project scorer 10/10; no retries, no timeouts
@@ -242,8 +281,7 @@ Results: evaluation/results/20261005-160047-bird-dev-database.jsonl (local, not 
 2026-10-05 — BIRD Mini-Dev, PARTIAL (run 20261005-103021-bird-database) — not comparable
 Commit: 2dbb325 (working tree had uncommitted changes) | Dataset: BIRD Mini-Dev PostgreSQL f65faf4 |
 Model: openai/gpt-oss-120b (Groq) | scope: database | evidence: on | answers: template | row cap 1,000
-Results: evaluation/results/20261005-103021-bird-database.jsonl (local; BIRD-derived results are
-not committed until the licence question is decided)
+Results: evaluation/results/20261005-103021-bird-database.jsonl
 * Planned: formula_1, california_schools, thrombosis_prediction (142 questions at the time; 13 of
   the 500 were excluded by the 1,000-row cap). Scored: 96 (46 formula_1, 50 thrombosis_prediction);
   5 not run (HTTP 429), california_schools never reached: Groq's 200,000 tokens/day limit
