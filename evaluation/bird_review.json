@@ -1,16 +1,18 @@
 {
- "about": "Hand review of BIRD Mini-Dev questions whose ground truth looked wrong or ambiguous while checking the misses of run 20261005-103021-bird-database. Judgement, not measurement: the report shows it beside BIRD's official score and never changes that score. BIRD's answers are never edited. One review pass by the project (every 'ground_truth_error' was confirmed by running a corrected query, which returns a different result); not checked independently. Only questions seen so far are listed: an unlisted question is unreviewed, not correct.",
- "reviewed": "2026-10-05",
+ "about": "Hand review of BIRD Mini-Dev questions whose ground truth looked wrong or ambiguous while checking the misses of runs 20261005-103021-bird-database and 20261012-094139-bird-database. Judgement, not measurement: the report shows it beside BIRD's official score and never changes that score. BIRD's answers are never edited. Reviewed by the project in two passes (every 'ground_truth_error' was confirmed by running a corrected query, which returns a different result); not checked independently. Only questions seen so far are listed: an unlisted question is unreviewed, not correct.",
+ "reviewed": "2026-10-13",
  "verdicts": {
   "ground_truth_error": "BIRD's SQL does not answer the question, and a correct answer gives a different result (a bug in the SQL, or rows counted where the question asks for entities).",
   "ground_truth_questionable": "BIRD's SQL contradicts the question or its own hint, but a reader could defend it.",
   "ambiguous": "The question supports two readings that give different results; BIRD picked one."
  },
  "questions": {
+  "B0234": {"verdict": "ground_truth_error", "note": "Missing parentheses around the OR, and atoms _1 / _2 where the hint names atom TR009_12: 1041 instead of 6 connections (3 bonds)."},
   "B0847": {"verdict": "ground_truth_error", "note": "Sorts NULLS FIRST, so it returns one of the six drivers with no Q2 time instead of the fastest."},
   "B0906": {"verdict": "ground_truth_error", "note": "Orders only by year: an arbitrary one of 16 races in the first season, not the first race; points are the standings' running total."},
   "B0944": {"verdict": "ground_truth_error", "note": "The time-string arithmetic yields NULL on PostgreSQL; the expected answer is a single NULL."},
   "B0951": {"verdict": "ground_truth_error", "note": "Asks how many constructors; returns the number of races (2) of the one matching constructor."},
+  "B1107": {"verdict": "ground_truth_error", "note": "The outer ORDER BY date DESC discards the ranking by crossing: it returns the latest record (2016-04-21), not the first date with the highest crossing (2013-02-15)."},
   "B1168": {"verdict": "ground_truth_error", "note": "Returns an extra column (the birthday) that the question does not ask for, so no answer to the question matches exactly."},
   "B1179": {"verdict": "ground_truth_error", "note": "The hint names one antibody column; the SQL returns three."},
   "B1205": {"verdict": "ground_truth_error", "note": "A yes/no question about one patient; returns one row per lab record (67 rows)."},
@@ -26,6 +28,8 @@
   "B1267": {"verdict": "ground_truth_error", "note": "Counts joined rows, not patients: 7 instead of 6."},
   "B1302": {"verdict": "ground_truth_error", "note": "Counts joined rows, not patients: 7 instead of 1."},
   "B1526": {"verdict": "ground_truth_error", "note": "Filters on a different price than the question and hint; no transaction matches either, and the expected answer is a single NULL."},
+  "B0474": {"verdict": "ground_truth_questionable", "note": "The hint says baseSetSize < 10, the question and BIRD's SQL < 100: following the hint gives 0 instead of 30."},
+  "B0486": {"verdict": "ground_truth_questionable", "note": "The hint divides by SUM(convertedManaCost), BIRD's SQL by the number of cards: 2.43% by the hint, 7.74% expected."},
   "B0928": {"verdict": "ground_truth_questionable", "note": "'Ranked first in the Grand Prix' read as fastest-lap rank 1 rather than the winner; also returns names besides the requested reference name."},
   "B0930": {"verdict": "ground_truth_questionable", "note": "The hint says the minimum rank; the SQL uses rank = 1 (the data also has rank 0 as a placeholder)."},
   "B1152": {"verdict": "ground_truth_questionable", "note": "The question asks outpatient to inpatient; the hint and the SQL compute the inverse."},
