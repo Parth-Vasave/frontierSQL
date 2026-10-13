@@ -89,7 +89,7 @@ export function Replay({ result, recordedAt }: { result: AgentResult; recordedAt
       >
         <aside inert className="hidden w-[15.5rem] shrink-0 flex-col border-r border-line bg-sidebar md:flex" aria-hidden="true">
           <div className="flex items-center gap-2.5 px-4.5 pt-4 pb-3">
-            <span className="text-[14.5px] font-semibold tracking-tight">AI SQL Analyst</span>
+            <span className="text-[14.5px] font-semibold tracking-tight">FrontierSQL</span>
           </div>
           <div className="px-3">
             <p className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[14px] font-medium">

@@ -73,7 +73,7 @@ LLM's SQL, and here's the test suite that proves it."
   read from the actual recorded report, with the run, model and date they came from.
 - The frontend (Milestone 12) lives in `frontend/`. An earlier build was removed and remains in git
   history at commit `ae1cca7` / `50ee27e` as reference only.
-- The code is MIT-licensed and public at https://github.com/Parth-Vasave/ai-sql-analyst-agent.
+- The code is MIT-licensed and public at https://github.com/Parth-Vasave/frontiersql.
   Star, contributor and usage counts must never be invented.
 
 ## Brand Commitments
@@ -95,7 +95,7 @@ each answer exposes, not in an unusual layout.
 - Dataset: Our World in Data, "CO2 and Greenhouse Gas Emissions" (CC BY 4.0), pinned commit
   `382ee6c662b0ece26e111f263b44c029afad7787`, 1750-2024, 254 entities (242 after cleaning), 50,411
   rows x 79 source columns (`data/README.md`). Real, citable, safe to reference directly.
-- Repository: https://github.com/Parth-Vasave/ai-sql-analyst-agent (MIT). Do not fabricate usage
+- Repository: https://github.com/Parth-Vasave/frontiersql (MIT). Do not fabricate usage
   or star metrics.
 - Recorded evaluation: offline safety suite 28/28 blocked (2026-10-04) and one complete question
   suite run, 74/78 (2026-10-04). EVALUATION_PLAN.md is the source of truth.

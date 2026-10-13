@@ -1,4 +1,4 @@
--- AI SQL Analyst — analytical schema for Our World in Data CO2 and greenhouse gas emissions.
+-- FrontierSQL — analytical schema for Our World in Data CO2 and greenhouse gas emissions.
 --
 -- Source: https://github.com/owid/co2-data (CC BY 4.0), see data/README.md.
 -- One source row = one entity (country or aggregate region) and year. It is split into

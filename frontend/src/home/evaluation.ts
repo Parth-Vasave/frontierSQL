@@ -2,7 +2,7 @@
 // for effect: evaluation.test.ts recomputes every number here from evaluation/results/*.jsonl and
 // fails when they drift. A new run means new result files, then updating this module.
 
-export const REPO_URL = 'https://github.com/Parth-Vasave/ai-sql-analyst-agent'
+export const REPO_URL = 'https://github.com/Parth-Vasave/frontiersql'
 export const repoFile = (path: string) => `${REPO_URL}/blob/main/${path}`
 
 export interface RecordedRun {

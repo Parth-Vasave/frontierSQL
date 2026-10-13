@@ -14,7 +14,7 @@ describe('HomePage', () => {
     }
     expect(screen.getAllByRole('link', { name: /View on GitHub/ })[0]).toHaveAttribute(
       'href',
-      'https://github.com/Parth-Vasave/ai-sql-analyst-agent',
+      'https://github.com/Parth-Vasave/frontiersql',
     )
   })
 

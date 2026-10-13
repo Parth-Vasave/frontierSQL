@@ -56,7 +56,7 @@ const DEFENSES: { term: string; text: string }[] = [
 ]
 
 const QUICK_START = `git clone ${REPO_URL}
-cd ai-sql-analyst-agent
+cd frontiersql
 cp .env.example .env           # set the two passwords and LLM_API_KEY
 docker compose up -d           # PostgreSQL, read-only role, API on :8000
 docker compose run --rm seed   # load the pinned OWID data
@@ -312,7 +312,7 @@ function TopBar() {
     <header className={`sticky top-0 z-30 border-b bg-surface transition-colors ${scrolled ? 'border-line' : 'border-transparent'}`}>
       <div className="mx-auto flex h-14 max-w-[72rem] items-center gap-2 px-4 sm:px-6">
         <a href={import.meta.env.BASE_URL} className="mr-auto flex items-center gap-2.5 rounded-lg py-1 pr-2">
-          <span className="text-[15px] font-semibold tracking-tight">AI SQL Analyst</span>
+          <span className="text-[15px] font-semibold tracking-tight">FrontierSQL</span>
         </a>
         <nav aria-label="Sections" className="hidden items-center gap-1 md:flex">
           <NavLink href="#how">How it works</NavLink>
@@ -492,7 +492,7 @@ function Footer({ preference, onTheme }: { preference: ThemePreference; onTheme:
       <div className="mx-auto flex max-w-[72rem] flex-col gap-8 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
         <div className="max-w-[28rem]">
           <div className="flex items-center gap-2.5">
-            <span className="text-[14.5px] font-semibold tracking-tight">AI SQL Analyst</span>
+            <span className="text-[14.5px] font-semibold tracking-tight">FrontierSQL</span>
           </div>
           <p className="mt-3 text-[13px] leading-relaxed text-ink-faint">
             Code under the{' '}
