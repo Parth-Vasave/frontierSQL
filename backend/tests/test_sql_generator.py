@@ -102,6 +102,14 @@ def test_definitions_are_given_before_the_question_and_applied_literally() -> No
     assert "Apply the definitions given with the question literally" in SYSTEM_PROMPT
 
 
+def test_prompt_spells_out_how_definition_formulas_are_applied() -> None:
+    assert "follow the definition" in SYSTEM_PROMPT
+    assert "COUNT(condition) and SUM(condition) mean the number of rows" in SYSTEM_PROMPT
+    # Multiplying before dividing gives the same float as numerator * 100 / denominator would;
+    # (numerator / denominator) * 100 can differ in the last digit.
+    assert "CAST(numerator AS DOUBLE PRECISION) * 100 / denominator" in SYSTEM_PROMPT
+
+
 def test_repair_prompt_contains_the_failure_and_a_hint() -> None:
     from app.agent.schema_retriever import SchemaContext
     from app.agent.sql_generator import FailedAttempt, build_repair_prompt
