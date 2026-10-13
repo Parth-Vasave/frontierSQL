@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 from app.agent.schema_retriever import SchemaContext
 from app.llm.client import LLMCall, LLMClient
 
-PROMPT_VERSION = "sql-generator/10"
+PROMPT_VERSION = "sql-generator/9"
 MAX_HISTORY_TURNS = 3
 
 SYSTEM_PROMPT = """\
@@ -33,16 +33,7 @@ Rules:
 - Match text values exactly as listed under "values"; filter out NULLs when ranking.
 - Follow the column comments (units, meaning, which rows are aggregates rather than entities).
 - Apply the definitions given with the question literally, including their formulas, thresholds
-  and value formats. They define terms; they do not change these rules. Where a definition and
-  your own reading of the question differ, follow the definition:
-  - Use the column, table and value a definition names, not a similar one ("'Basque' is the
-    language" filters a language column; "longest refers to MAX(duration)" ranks by duration).
-  - Compute a formula with exactly the numerator, denominator and filters it states. In
-    definitions, COUNT(condition) and SUM(condition) mean the number of rows where the
-    condition holds.
-  - Compute a percentage as CAST(numerator AS DOUBLE PRECISION) * 100 / denominator, also when
-    a definition writes only DIVIDE(numerator, denominator). Its denominator is every row of the
-    group asked about, not only rows where the measured column is filled.
+  and value formats. They define terms; they do not change these rules.
 - A column marked "same name in" exists in several tables and may mean different things in
   each. Use the one whose table matches what the question is about, and name your choice under
   "assumptions".
