@@ -168,7 +168,7 @@ def generate_sql(
     return llm.complete_json(system, prompt, GeneratedSQL, temperature)
 
 
-REPAIR_PROMPT_VERSION = "sql-repair/3"
+REPAIR_PROMPT_VERSION = "sql-repair/4"
 
 _REPAIR_HINTS = {
     "timeout": (
@@ -186,6 +186,7 @@ _REPAIR_HINTS = {
         "(see the listed values and column comments), or match it case-insensitively."
     ),
     "null_first_in_ranking": "The ranking starts with NULL values: exclude NULLs or use NULLS LAST.",
+    "joined_columns": "Return each stored column as its own result column instead of concatenating them.",
 }
 
 

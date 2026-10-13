@@ -77,6 +77,42 @@ def test_duplicate_rows() -> None:
     assert codes(result(["a"], [[1], [1], [2]])) == ["duplicate_rows"]
 
 
+@pytest.mark.parametrize(
+    "projection",
+    [
+        "m.first_name || ' ' || m.last_name AS full_name",
+        "CONCAT(first_name, ' ', last_name) AS full_name",
+        "CONCAT_WS(' ', first_name, last_name) AS full_name",
+        "TRIM(first_name || ' ' || COALESCE(last_name, '')) AS full_name",
+    ],
+)
+def test_concatenated_columns_are_repairable(projection: str) -> None:
+    res = result(["id", "full_name"], [[1, "Ada Lovelace"]])
+    checks = check_result(res, f"SELECT id, {projection} FROM member AS m", "postgres", 100, "kept")
+    assert [(c.code, c.column, c.repairable) for c in checks] == [("joined_columns", "full_name", True)]
+    assert checks[0].message == "full_name joins first_name and last_name into one text value."
+
+
+def test_concatenated_columns_in_the_final_select_of_a_cte_query() -> None:
+    sql = "WITH m AS (SELECT * FROM member) SELECT city || ', ' || country AS place FROM m"
+    checks = check_result(result(["place"], [["Oslo, Norway"]]), sql, "postgres", 100, "kept")
+    assert [c.message for c in checks] == ["place joins city and country into one text value."]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT '$' || price AS price FROM t",  # one column with a label: a format
+        "SELECT COUNT(DISTINCT a || b) AS pairs FROM t",  # computed over, not returned
+        "SELECT STRING_AGG(first_name || ' ' || last_name, ', ') AS names FROM t",
+        "SELECT (SELECT a || b FROM u LIMIT 1) AS x FROM t",  # inside a subquery
+        "WITH k AS (SELECT a || '-' || b AS key FROM t) SELECT key FROM k",  # a key built in a CTE
+    ],
+)
+def test_other_concatenation_is_not_reported(sql: str) -> None:
+    assert codes(result(["x"], [["v"]]), sql) == []
+
+
 # --- missing-value probes (integration) --------------------------------------------------
 
 
