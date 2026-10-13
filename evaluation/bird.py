@@ -26,7 +26,10 @@ diagnosing and tuning. Dev ground truth is SQLite SQL: build-expected translates
 (`translate_sqlite`), runs it, and keeps it only if it executes; the rest are excluded and counted,
 never hand-edited. `--sample N` runs a fixed, stratified sample (by database and difficulty).
 
-The questions and results are CC BY-SA 4.0 and are not committed: they live under data/.
+The questions are CC BY-SA 4.0 and are not committed: they live under data/. Run results, which
+quote them, are committed under the same licence (evaluation/results/BIRD_RUNS.md). To check a
+test run with BIRD's own scoring script:
+    python -m evaluation.bird export-official <results.jsonl> <folder>
 """
 
 from __future__ import annotations
@@ -534,6 +537,33 @@ def classify_misses(url: SecretStr, records: dict[str, dict[str, Any]]) -> dict[
     return shapes
 
 
+def export_official(records: dict[str, dict[str, Any]], out: Path, questions: Path = QUESTIONS) -> int:
+    """Write a test run in the input format of BIRD's own evaluation scripts (evaluation_ex.py in
+    bird-bench/mini_dev), so its score can be checked with BIRD's code: predictions as
+    {"0": "SQL\\t----- bird -----\\tdb_id", ...} in question order, the ground truth of `questions`
+    as one "SQL\\tdb_id" line per question, and the questions as JSON lines (the script reads their
+    difficulty). An answer without SQL is written empty, which the script scores as wrong. Line
+    breaks and tabs in SQL become spaces, since both files are line- and tab-separated. Returns the
+    number of answers without SQL."""
+
+    def one_line(text: str) -> str:
+        return text.replace("\r", " ").replace("\n", " ").replace("\t", " ").strip()
+
+    items = json.loads(questions.read_text())
+    predictions, gold, without_sql = {}, [], 0
+    for index, q in enumerate(items):
+        record = records.get(f"B{q['question_id']:04d}", {})
+        answer = one_line(record.get("sql") or "") if record.get("status") == "success" else ""
+        without_sql += not answer
+        predictions[str(index)] = f"{answer}\t----- bird -----\t{q['db_id']}"
+        gold.append(f"{one_line(q['SQL'])}\t{q['db_id']}")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "predict_mini_dev_PostgreSQL.json").write_text(json.dumps(predictions, indent=1) + "\n")
+    (out / "mini_dev_postgresql_gold.sql").write_text("\n".join(gold) + "\n")
+    (out / "mini_dev_postgresql.jsonl").write_text("".join(json.dumps(q) + "\n" for q in items))
+    return without_sql
+
+
 def _first_line(exc: Exception) -> str:
     return str(exc).strip().splitlines()[0][:300] if str(exc).strip() else exc.__class__.__name__
 
@@ -564,7 +594,19 @@ def main(argv: list[str] | None = None) -> int:
         "misses", help="classify the official-EX misses of a recorded run (re-runs its SQL, no LLM)"
     )
     misses.add_argument("results", type=Path)
+    export = commands.add_parser(
+        "export-official", help="write a test run in the input format of BIRD's evaluation scripts"
+    )
+    export.add_argument("results", type=Path)
+    export.add_argument("out", type=Path, help="folder for the three files")
     args = parser.parse_args(argv)
+
+    if args.command == "export-official":
+        from evaluation.run import load_records  # imported here: evaluation.run imports this module
+
+        without_sql = export_official(load_records(args.results), args.out)
+        print(f"Wrote BIRD's input files to {args.out} ({without_sql} answers without SQL)")
+        return 0
 
     settings = get_settings()
     if settings.database_url is None:

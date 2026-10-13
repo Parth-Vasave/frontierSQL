@@ -18,6 +18,7 @@ known-first-party = ["app", "scripts"]
 
 [tool.mypy]
 files = ["backend/app", "backend/tests", "scripts", "evaluation"]
+exclude = ["^evaluation/results/"]  # run outputs (data), never code
 explicit_package_bases = true
 mypy_path = "backend"
 python_version = "3.11"

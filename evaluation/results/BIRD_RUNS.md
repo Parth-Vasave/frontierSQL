@@ -77,3 +77,32 @@ Database Interface? A BIg Bench for Large-Scale Database Grounded Text-to-SQLs" 
 
 48 questions fixed, 22 broken. Same model (gpt-oss-120b on Cerebras), default reasoning effort,
 one candidate, BIRD's hints on, at most 2 repairs.
+
+## Checking the score with BIRD's own script
+
+The scores above come from this project's scorer, which re-runs the final SQL and BIRD's SQL and
+compares the rows as BIRD's `evaluation_ex.py` does. To check a test run with BIRD's code itself
+(macOS commands; needs the loaded `bird` database):
+
+```
+python -m evaluation.bird export-official evaluation/results/20261013-122627-bird-database.jsonl /tmp/bird-check
+git clone --depth 1 https://github.com/bird-bench/mini_dev /tmp/mini_dev
+rm -rf /tmp/mini_dev/evaluation/__pycache__
+# BIRD's script hard-codes its connection; an empty one makes libpq read the PG* variables below
+sed -i '' 's/"dbname=bird[^"]*"/""/' /tmp/mini_dev/evaluation/evaluation_utils.py
+python3 -m venv /tmp/bird-venv && /tmp/bird-venv/bin/pip install psycopg2-binary pymysql func_timeout
+export PGHOST=localhost PGPORT=5433 PGDATABASE=bird PGUSER=sql_agent PGPASSWORD=...  # as in DATABASE_URL
+export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=60000 -c max_parallel_workers_per_gather=0 -c search_path=california_schools,card_games,codebase_community,debit_card_specializing,european_football_2,financial,formula_1,student_club,superhero,thrombosis_prediction,toxicology"
+cd /tmp/mini_dev/evaluation && /tmp/bird-venv/bin/python evaluation_ex.py --sql_dialect PostgreSQL \
+  --db_root_path unused/ --num_cpus 4 --meta_time_out 30 --output_log_path /tmp/bird-check/ex.txt \
+  --predicted_sql_path /tmp/bird-check/predict_mini_dev_PostgreSQL.json \
+  --ground_truth_path /tmp/bird-check/mini_dev_postgresql_gold.sql \
+  --diff_json_path /tmp/bird-check/mini_dev_postgresql.jsonl
+```
+
+The search path stands in for BIRD's single-schema database (this project loads each BIRD database
+into its own schema; no table name repeats), and the session settings are the scorer's: read-only,
+no parallel query. Checked on 2026-10-13 for the final run: **EX 56.80** (simple 70.95, moderate
+52.80, challenging 46.08), the same as above. The ground truth exported is the canonical Hugging Face
+revision; with the older `mini_dev_postgresql_gold.sql` of the July 2025 package the script reports
+56.60, because that file still has BIRD's earlier SQL for B0879 (fastest lap speed ordered as text).
