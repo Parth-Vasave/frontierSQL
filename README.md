@@ -1,4 +1,4 @@
-# AI SQL Analyst
+# FrontierSQL
 
 Ask a question about a database in plain English. The analyst turns it into SQL, checks that SQL
 deterministically, runs it on a read-only connection, verifies the result, and answers with a
@@ -204,7 +204,7 @@ are recorded in [EVALUATION_PLAN.md](EVALUATION_PLAN.md) only once a run exists.
 
 - PostgreSQL only; MySQL is not implemented.
 - The rate limiter is in memory per process. Multi-instance or serverless deployments need a shared
-  store ([#7](https://github.com/Parth-Vasave/ai-sql-analyst-agent/issues/7)).
+  store ([#7](https://github.com/Parth-Vasave/frontiersql/issues/7)).
 - No hosted demo yet. [docs/deployment.md](docs/deployment.md) describes a free Neon + Render +
   Vercel + Groq setup; it has not been run end to end.
 - Results depend on the chosen model; only one model has been evaluated so far.

@@ -7,7 +7,7 @@ describes each layer.
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through
-[GitHub private vulnerability reporting](https://github.com/Parth-Vasave/ai-sql-analyst-agent/security/advisories/new),
+[GitHub private vulnerability reporting](https://github.com/Parth-Vasave/frontiersql/security/advisories/new),
 not in a public issue.
 
 Especially useful: SQL the validator accepts but should reject (writes, system catalogs, denied

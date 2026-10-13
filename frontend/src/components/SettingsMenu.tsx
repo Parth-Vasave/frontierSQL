@@ -3,7 +3,7 @@ import type { DatabaseInfo } from '../api/types'
 import type { ThemePreference } from '../hooks/useTheme'
 import { CheckIcon, ChevronUpDownIcon, DatabaseIcon, GithubIcon, HelpIcon, MonitorIcon, MoonIcon, PlugIcon, SunIcon, TableIcon } from './icons'
 
-const REPO_URL = 'https://github.com/Parth-Vasave/ai-sql-analyst-agent'
+const REPO_URL = 'https://github.com/Parth-Vasave/frontiersql'
 
 const STATUS_TEXT: Record<DatabaseInfo['status'], string> = {
   ready: 'read-only',

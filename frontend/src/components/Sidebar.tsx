@@ -27,7 +27,7 @@ export function Sidebar({ chats, currentId, onSelect, onNewChat, onDelete, onClo
     <nav aria-label="Chats" className="flex h-full w-[17rem] flex-col bg-sidebar">
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <a href={import.meta.env.BASE_URL} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1" title="Project home">
-          <span className="text-[15px] font-semibold tracking-tight">AI SQL Analyst</span>
+          <span className="text-[15px] font-semibold tracking-tight">FrontierSQL</span>
         </a>
         <button
           type="button"
