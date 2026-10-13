@@ -197,8 +197,26 @@ takes [BIRD Mini-Dev](https://github.com/bird-bench/mini_dev) (500 questions wit
 over 11 unfamiliar databases, PostgreSQL version): `python -m evaluation.run --dataset bird`, after
 loading it as described in [data/README.md](data/README.md#benchmark-data-bird-mini-dev). BIRD runs
 are scored with BIRD's official execution accuracy and Soft F1 (reproduced exactly, checked against
-BIRD's own scripts), with a hand review of questionable ground truth shown beside them. Results
-are recorded in [EVALUATION_PLAN.md](EVALUATION_PLAN.md) only once a run exists.
+BIRD's own scripts), with a hand review of questionable ground truth shown beside them.
+
+Full Mini-Dev runs (PostgreSQL, all 500 questions; gpt-oss-120b on Cerebras, BIRD's hints on, one
+candidate, at most two repairs):
+
+| Run | Code | Official EX | Simple / moderate / challenging |
+|---|---|---|---|
+| Baseline, 2026-10-12 | 6f85d14 | 258/500 (51.6%) | 96/148 · 124/250 · 38/102 |
+| Final, 2026-10-13 | a226871 | **284/500 (56.8%)** | 105/148 · 132/250 · 47/102 |
+
+BIRD's own `evaluation_ex.py` reports the same 56.80 for the final run (steps in
+[evaluation/results/BIRD_RUNS.md](evaluation/results/BIRD_RUNS.md)). The changes between the two
+runs came from reading the baseline's 242 misses; each was measured on BIRD's separate dev
+questions, and the test set was run once more at the end, so the final number is validated on
+dev but not independent of the test set. On the 465 questions the hand review does not flag, EX is
+60.6%. For context, as of 2026-10-13 the PostgreSQL column of the
+[official Mini-Dev leaderboard](https://bird-bench.github.io/) lists 65.80 (Ontology2SQL), 56.80
+(SmartQuery + GPT-5.1) and 50.80 (TA + GPT-4). Every run, with what was kept, reverted or not
+kept, is in [BIRD_RUNS.md](evaluation/results/BIRD_RUNS.md) and
+[EVALUATION_PLAN.md](EVALUATION_PLAN.md).
 
 ## Known limitations
 
