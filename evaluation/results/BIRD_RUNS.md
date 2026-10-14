@@ -102,7 +102,15 @@ cd /tmp/mini_dev/evaluation && /tmp/bird-venv/bin/python evaluation_ex.py --sql_
 
 The search path stands in for BIRD's single-schema database (this project loads each BIRD database
 into its own schema; no table name repeats), and the session settings are the scorer's: read-only,
-no parallel query. Checked on 2026-10-13 for the final run: **EX 56.80** (simple 70.95, moderate
-52.80, challenging 46.08), the same as above. The ground truth exported is the canonical Hugging Face
-revision; with the older `mini_dev_postgresql_gold.sql` of the July 2025 package the script reports
+no parallel query. The export drops the schema in front of table names (the agent writes
+`formula_1.drivers`), so the same predictions also run in a database loaded with BIRD's own
+PostgreSQL dump, which has every table in one schema. Checked on 2026-10-13 for the final run:
+**EX 56.80** (simple 70.95, moderate 52.80, challenging 46.08), the same as above. The ground truth
+exported is the canonical Hugging Face revision; with the older `mini_dev_postgresql_gold.sql` of the July 2025 package the script reports
 56.60, because that file still has BIRD's earlier SQL for B0879 (fastest lap speed ordered as text).
+
+The predictions of the final run, as exported above, are committed as
+[bird-official/predict_mini_dev_PostgreSQL.json](bird-official/predict_mini_dev_PostgreSQL.json)
+(the agent's SQL and the BIRD database id only; 8 questions have no SQL and count as wrong). Checked
+again with BIRD's script on 2026-10-14 after the export started dropping schemas: EX 56.80, the
+same per difficulty.

@@ -26,6 +26,7 @@ from evaluation.bird import (
     soft_f1,
     stratified_sample,
     translate_sqlite,
+    unqualified,
 )
 
 RAW = [
@@ -215,6 +216,29 @@ def test_miss_shape_when_nothing_was_expected() -> None:
     assert miss_shape([(1,)], []) == "rows where none expected"
 
 
+@pytest.mark.parametrize(
+    ("schema", "query", "expected"),
+    [
+        ("formula_1", "SELECT d.forename FROM formula_1.drivers AS d", "SELECT d.forename FROM drivers AS d"),
+        (
+            "formula_1",
+            'SELECT * FROM "formula_1"."drivers" JOIN formula_1.results USING (driverid)',
+            'SELECT * FROM "drivers" JOIN results USING (driverid)',
+        ),  # fmt: skip
+        # The schema superhero has a table superhero: a column of that table keeps its qualifier,
+        # and so does text in a string.
+        (
+            "superhero",
+            "SELECT superhero.id FROM superhero.superhero WHERE superhero.full_name = 'superhero.x'",
+            "SELECT superhero.id FROM superhero WHERE superhero.full_name = 'superhero.x'",
+        ),  # fmt: skip
+        ("formula_1", "SELECT 1 FROM financial.loan", "SELECT 1 FROM financial.loan"),  # another schema
+    ],
+)
+def test_unqualified_drops_only_the_schema_of_tables(schema: str, query: str, expected: str) -> None:
+    assert unqualified(query, schema) == expected
+
+
 def test_export_for_birds_own_scripts(tmp_path: Path) -> None:
     questions = tmp_path / "questions.json"
     questions.write_text(json.dumps(RAW))
@@ -226,7 +250,7 @@ def test_export_for_birds_own_scripts(tmp_path: Path) -> None:
 
     predictions = json.loads((tmp_path / "out" / "predict_mini_dev_PostgreSQL.json").read_text())
     assert predictions == {  # question order; the separator and db_id as BIRD's script splits them
-        "0": "SELECT forename FROM formula_1.drivers LIMIT 5\t----- bird -----\tformula_1",
+        "0": "SELECT forename FROM drivers LIMIT 5\t----- bird -----\tformula_1",  # schema dropped
         "1": "\t----- bird -----\tfinancial",  # no SQL: the script scores it as wrong
     }
     gold = (tmp_path / "out" / "mini_dev_postgresql_gold.sql").read_text().splitlines()

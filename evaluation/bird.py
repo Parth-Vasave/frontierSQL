@@ -52,6 +52,7 @@ from psycopg import sql
 from pydantic import SecretStr
 from sqlalchemy.engine import make_url
 from sqlglot import exp
+from sqlglot.tokens import TokenType
 
 from app.agent.controller import AgentResult
 
@@ -537,14 +538,36 @@ def classify_misses(url: SecretStr, records: dict[str, dict[str, Any]]) -> dict[
     return shapes
 
 
+def unqualified(query: str, schema: str) -> str:
+    """`query` without the `schema.` in front of its tables, every other character unchanged. The
+    agent names tables with their schema (one schema per BIRD database here); BIRD's database has
+    them all in one. Only a `schema.` followed by a table the parse tree places in that schema is
+    cut, so `superhero.id` (a column of the table superhero) stays."""
+    tree = sqlglot.parse_one(query, read="postgres")
+    tables = {table.name.lower() for table in tree.find_all(exp.Table) if table.db.lower() == schema}
+    tokens = sqlglot.Dialect.get_or_raise("postgres").tokenize(query)
+    cuts = [
+        (name.start, dot.end + 1)
+        for before, name, dot, table in zip([None, *tokens], tokens, tokens[1:], tokens[2:], strict=False)
+        if name.text.lower() == schema
+        and dot.token_type == TokenType.DOT
+        and table.text.lower() in tables
+        and (before is None or before.token_type != TokenType.DOT)
+    ]
+    for start, end in reversed(cuts):
+        query = query[:start] + query[end:]
+    return query
+
+
 def export_official(records: dict[str, dict[str, Any]], out: Path, questions: Path = QUESTIONS) -> int:
     """Write a test run in the input format of BIRD's own evaluation scripts (evaluation_ex.py in
     bird-bench/mini_dev), so its score can be checked with BIRD's code: predictions as
     {"0": "SQL\\t----- bird -----\\tdb_id", ...} in question order, the ground truth of `questions`
     as one "SQL\\tdb_id" line per question, and the questions as JSON lines (the script reads their
     difficulty). An answer without SQL is written empty, which the script scores as wrong. Line
-    breaks and tabs in SQL become spaces, since both files are line- and tab-separated. Returns the
-    number of answers without SQL."""
+    breaks and tabs in SQL become spaces, since both files are line- and tab-separated, and table
+    names lose their schema (`unqualified`), so the predictions also run in BIRD's own database,
+    which has every table in one schema. Returns the number of answers without SQL."""
 
     def one_line(text: str) -> str:
         return text.replace("\r", " ").replace("\n", " ").replace("\t", " ").strip()
@@ -553,7 +576,8 @@ def export_official(records: dict[str, dict[str, Any]], out: Path, questions: Pa
     predictions, gold, without_sql = {}, [], 0
     for index, q in enumerate(items):
         record = records.get(f"B{q['question_id']:04d}", {})
-        answer = one_line(record.get("sql") or "") if record.get("status") == "success" else ""
+        query = record.get("sql") if record.get("status") == "success" else None
+        answer = one_line(unqualified(query, q["db_id"])) if query else ""
         without_sql += not answer
         predictions[str(index)] = f"{answer}\t----- bird -----\t{q['db_id']}"
         gold.append(f"{one_line(q['SQL'])}\t{q['db_id']}")
