@@ -95,14 +95,24 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 }
 
 function PlanList({ plan }: { plan: QueryPlan }) {
-  const rows: [string, string][] = [['Intent', plan.intent]]
+  const rows: [string, ReactNode][] = [['Intent', plan.intent]]
   if (plan.tables.length) rows.push(['Tables', plan.tables.join(', ')])
   if (plan.metrics.length) rows.push(['Metrics', plan.metrics.join(', ')])
   if (plan.filters.length) rows.push(['Filters', plan.filters.join('; ')])
   if (plan.group_by.length) rows.push(['Grouped by', plan.group_by.join(', ')])
   if (plan.order_by) rows.push(['Ordered by', plan.order_by])
   if (plan.limit) rows.push(['Limit', String(plan.limit)])
-  if (plan.assumptions.length) rows.push(['Assumptions', plan.assumptions.join('; ')])
+  // Assumptions are usually whole sentences: one per line, since joining them would print ".;".
+  if (plan.assumptions.length) {
+    rows.push([
+      'Assumptions',
+      <ul key="assumptions" className="flex flex-col gap-1">
+        {plan.assumptions.map((assumption, index) => (
+          <li key={index}>{assumption}</li>
+        ))}
+      </ul>,
+    ])
+  }
 
   return (
     <dl className="grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1 text-[13.5px]">
