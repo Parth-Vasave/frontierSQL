@@ -116,6 +116,17 @@ def check_result(
                     )
                 )
 
+    wanted = _top_n(tree, limit_action) if tree is not None else None
+    if wanted is not None and result.row_count < wanted:
+        checks.append(
+            ResultCheck(
+                code="fewer_than_requested",
+                severity="warning",
+                message=f"The query asks for the top {wanted} but returned {result.row_count}; "
+                "some may have no data for the filters used.",
+            )
+        )
+
     if result.row_count > 1:
         for index, column in enumerate(result.columns):
             if all(row[index] is None for row in result.rows):
@@ -147,6 +158,48 @@ def check_result(
             )
         )
     return checks
+
+
+def _top_n(tree: exp.Expr, limit_action: str) -> int | None:
+    """N of a top-N query: an ORDER BY ... LIMIT N the model wrote, in the final SELECT or in a
+    CTE or derived table that the final SELECT returns row for row (no grouping, aggregates or
+    DISTINCT). A LIMIT the validator added or clamped is the row cap, not a request."""
+    if not isinstance(tree, exp.Select):
+        return None
+    if limit_action == "kept" and tree.args.get("order"):
+        return _limit_count(tree)
+    if (
+        tree.args.get("group")
+        or tree.args.get("distinct")
+        or any(projection.find(exp.AggFunc) for projection in tree.expressions)
+    ):
+        return None
+    ctes = {cte.alias_or_name: cte.this for cte in tree.ctes}
+    sources = [tree.args.get("from_"), *(tree.args.get("joins") or [])]
+    for source in sources:
+        node = source.this if source is not None else None
+        if isinstance(node, exp.Subquery):
+            inner = node.this
+        elif isinstance(node, exp.Table) and not node.db and node.name in ctes:
+            inner = ctes[node.name]
+        else:
+            continue
+        if isinstance(inner, exp.Select) and inner.args.get("order"):
+            count = _limit_count(inner)
+            if count is not None:
+                return count
+    return None
+
+
+def _limit_count(query: exp.Select) -> int | None:
+    fetch = query.args.get("limit")
+    if isinstance(fetch, exp.Fetch):  # FETCH FIRST [n] ROWS ONLY; no count means one row
+        value = fetch.args.get("count") or exp.Literal.number(1)
+    elif isinstance(fetch, exp.Limit):
+        value = fetch.expression
+    else:
+        return None
+    return int(value.this) if isinstance(value, exp.Literal) and value.is_int else None
 
 
 def _hashable(value: Any) -> Any:

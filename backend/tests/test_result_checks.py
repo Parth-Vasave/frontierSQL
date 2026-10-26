@@ -73,6 +73,49 @@ def test_limit_reached_only_when_the_limit_was_not_asked_for() -> None:
     assert codes(result(["a"], rows), limit=10, action="kept") == []  # "top 10" asked for 10 rows
 
 
+TOP5_IN_CTE = (
+    "WITH top5 AS (SELECT id, name FROM c ORDER BY population DESC LIMIT 5) "
+    "SELECT t.name, g.total FROM top5 AS t JOIN g ON g.id = t.id WHERE g.total IS NOT NULL "
+    "ORDER BY t.name LIMIT 1000"
+)
+TOP5 = "WITH top5 AS (SELECT co2 FROM t ORDER BY co2 DESC LIMIT 5)"
+FOUR_ROWS = [["A", 1], ["B", 2], ["C", 3], ["D", 4]]
+
+
+@pytest.mark.parametrize(
+    ("sql", "action"),
+    [
+        ("SELECT name, co2 FROM t ORDER BY co2 DESC LIMIT 5", "kept"),
+        ("SELECT name, co2 FROM t ORDER BY co2 DESC FETCH FIRST 5 ROWS ONLY", "kept"),
+        (TOP5_IN_CTE, "added"),  # Q052: top 5 picked in a CTE, then a filter drops one
+        ("SELECT s.name, s.co2 FROM (SELECT name, co2 FROM t ORDER BY co2 DESC LIMIT 5) AS s", "added"),
+    ],
+)
+def test_top_n_with_fewer_rows_warns(sql: str, action: str) -> None:
+    checks = check_result(result(["name", "v"], FOUR_ROWS), sql, "postgres", 1000, action)
+    found = [(c.code, c.severity, c.repairable) for c in checks]
+    assert found == [("fewer_than_requested", "warning", False)]
+    assert checks[0].message.startswith("The query asks for the top 5 but returned 4;")
+
+
+@pytest.mark.parametrize(
+    ("sql", "action", "limit"),
+    [
+        ("SELECT name, co2 FROM t ORDER BY co2 DESC LIMIT 1000", "added", 1000),  # only the row cap
+        ("SELECT name, co2 FROM t ORDER BY co2 DESC LIMIT 1000", "clamped", 1000),  # asked for too many
+        ("SELECT name, co2 FROM t LIMIT 5", "kept", 5),  # no ranking
+        ("SELECT name, co2 FROM t ORDER BY co2 DESC LIMIT 4", "kept", 4),  # got all it asked for
+        # The outer query aggregates the top 5: one row is the expected shape.
+        (f"{TOP5} SELECT SUM(co2) FROM top5", "added", 1000),
+        (f"{TOP5} SELECT DISTINCT co2 FROM top5", "added", 1000),
+        # A top-N used only as a filter does not set the number of output rows.
+        ("SELECT name, co2 FROM t WHERE id IN (SELECT id FROM t ORDER BY co2 DESC LIMIT 5)", "added", 1000),
+    ],
+)
+def test_no_top_n_warning_otherwise(sql: str, action: str, limit: int) -> None:
+    assert "fewer_than_requested" not in codes(result(["name", "v"], FOUR_ROWS), sql, limit, action)
+
+
 def test_duplicate_rows() -> None:
     assert codes(result(["a"], [[1], [1], [2]])) == ["duplicate_rows"]
 
